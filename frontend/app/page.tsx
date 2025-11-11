@@ -323,10 +323,10 @@ export default function Home() {
     try {
       // --- THIS IS THE ONLY LINE YOU NEED TO CHANGE FOR DEPLOYMENT ---
       // --- PASTE YOUR RENDER URL HERE ---
-      // const response = await fetch('https://YOUR_RENDER_URL_HERE/api/scrape', {
+      const response = await fetch('https://re-edit-ai.onrender.com/api/scrape', {
       
       // --- THIS IS THE LOCALHOST URL ---
-      const response = await fetch('http://localhost:3001/api/scrape', { 
+      // const response = await fetch('http://localhost:3001/api/scrape', { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
       // ---------------------------------------------------------------
