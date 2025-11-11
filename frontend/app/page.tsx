@@ -7,7 +7,7 @@ import tinycolor from 'tinycolor2';
 
 // ------------------------------------------------------------------
 // SCRIPT TO INJECT INTO IFRAME
-// (This is your working version)
+// (This is unchanged)
 // ------------------------------------------------------------------
 const iframeListenerScript = `
   console.log('IFRAME LISTENER: Script Injected and RUNNING.');
@@ -34,6 +34,7 @@ const iframeListenerScript = `
 
 // ------------------------------------------------------------------
 // HELPER FUNCTION: Make URLs Absolute
+// (This is unchanged)
 // ------------------------------------------------------------------
 function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
   if (!baseUrl) {
@@ -293,19 +294,31 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // --- IFRAME PREPARATION ---
+  // --- UPDATED: IFRAME PREPARATION ---
   // ------------------------------------------------------------------
   const prepareIframe = (htmlString: string, cssString: string, baseUrl: string | null) => {
     let processedHtml = htmlString;
     if (baseUrl) { processedHtml = makeUrlsAbsolute(htmlString, baseUrl); }
+
     const styleTag = `<style>${cssString}</style>`;
     const scriptTag = `<script>${iframeListenerScript}</script>`;
-    const cspMetaTagRegex = /<meta\s+http-equiv=["']Content-Security-Policy["'][\s\S]*?>/gi;
-    const xFrameMetaTagRegex = /<meta\s+http-equiv=["']X-Frame-Options["'][\s\S]*?>/gi;
-    const modifiedHtml = processedHtml.replace(cspMetaTagRegex, '').replace(xFrameMetaTagRegex, '').replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "").replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
-    const cleanedHtml = modifiedHtml.replace( /<link[^>]*href=["']\/(?!http)[^"']+\.css["'][^>]*>/gi, '' );
-    setIframeContent(cleanedHtml);
+
+    // --- THIS IS THE FIX ---
+    // 1. Define the aggressive regex
+    const allStylesheetLinksRegex = /<link\s+[^>]*?rel=["']stylesheet["'][^>]*?>/gi;
+
+    // 2. Remove ALL original <script> tags AND <link rel="stylesheet"> tags
+    const cleanedHtml = processedHtml
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "") // Remove all scripts
+      .replace(allStylesheetLinksRegex, ""); // <-- REMOVE ALL STYLESHEETS
+
+    // 3. NOW, inject our own script and style tags into the clean <head>
+    const finalHtml = cleanedHtml.replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
+    // --- END OF FIX ---
+
+    setIframeContent(finalHtml);
   };
+
 
   // ------------------------------------------------------------------
   // HANDLE SCRAPE
@@ -315,8 +328,7 @@ export default function Home() {
     try { new URL(targetUrl); } catch { setErrorMessage('Please enter a valid URL (including https://)'); return; }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      // --- THIS IS THE ONLY LINE YOU NEED TO CHANGE FOR DEPLOYMENT ---
-      // --- PASTE YOUR RENDER URL HERE ---
+      // --- THIS IS THE DEPLOYMENT URL ---
       // const response = await fetch('https://YOUR_RENDER_URL_HERE/api/scrape', {
       
       // --- THIS IS THE LOCALHOST URL ---
