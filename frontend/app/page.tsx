@@ -15,26 +15,19 @@ const iframeListenerScript = `
   let highlightStyleTag = null; 
   let isTextEditEnabled = false;
   let lastHoveredTextElement = null;
-  // --- FIX: Added DIV, SPAN, I, B, STRONG to catch all text/emojis ---
   const TEXT_EDIT_TAGS = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'A', 'LI', 'BUTTON', 'LABEL', 'SMALL', 'STRONG', 'EM', 'TIME', 'BLOCKQUOTE', 'TD', 'TH', 'DIV', 'I', 'B'];
-  
   let isImageEditEnabled = false;
   let lastHoveredImageElement = null;
   const IMAGE_EDIT_TAGS = ['IMG', 'SVG']; 
   window.parent.postMessage({ type: 'IFRAME_READY' }, '*');
-  
   const handleTextMouseOver = (event) => { if (!isTextEditEnabled) return; const target = event.target; if (TEXT_EDIT_TAGS.includes(target.tagName)) { lastHoveredTextElement = target; target.style.outline = '2px dashed #FF00FF !important'; target.style.cursor = 'pointer'; } };
   const handleTextMouseOut = (event) => { if (lastHoveredTextElement) { lastHoveredTextElement.style.outline = ''; lastHoveredTextElement.style.cursor = 'default'; lastHoveredTextElement = null; } };
   const handleTextClick = (event) => { if (!isTextEditEnabled || !lastHoveredTextElement) return; event.preventDefault(); event.stopPropagation(); const target = lastHoveredTextElement; const tempId = 'live-edit-text-' + Date.now(); target.setAttribute('data-live-edit-id', tempId); window.parent.postMessage({ type: 'ELEMENT_CLICKED', tempId: tempId, currentText: target.innerText }, '*'); };
-  
   const cleanupTextEdit = () => { document.body.removeEventListener('mouseover', handleTextMouseOver); document.body.removeEventListener('mouseout', handleTextMouseOut); document.body.removeEventListener('click', handleTextClick, true); if (lastHoveredTextElement) lastHoveredTextElement.style.outline = ''; document.querySelectorAll('[data-live-edit-id]').forEach(el => el.removeAttribute('data-live-edit-id')); console.log('IFRAME LISTENER: Text Edit Mode Disabled.'); };
-  
   const handleImageMouseOver = (event) => { if (!isImageEditEnabled) return; const target = event.target; if (IMAGE_EDIT_TAGS.includes(target.tagName)) { lastHoveredImageElement = target; target.style.outline = '3px solid #00A8FF !important'; target.style.cursor = 'pointer'; } };
   const handleImageMouseOut = (event) => { if (lastHoveredImageElement) { lastHoveredImageElement.style.outline = ''; lastHoveredImageElement.style.cursor = 'default'; lastHoveredImageElement = null; } };
   const handleImageClick = (event) => { if (!isImageEditEnabled || !lastHoveredImageElement) return; event.preventDefault(); event.stopPropagation(); const target = lastHoveredImageElement; const tempId = 'live-edit-img-' + Date.now(); target.setAttribute('data-live-edit-id', tempId); let currentSrc = target.tagName === 'IMG' ? target.src : ''; window.parent.postMessage({ type: 'IMAGE_CLICKED', tempId: tempId, tagName: target.tagName, currentSrc: currentSrc }, '*'); };
-  
   const cleanupImageEdit = () => { document.body.removeEventListener('mouseover', handleImageMouseOver); document.body.removeEventListener('mouseout', handleImageMouseOut); document.body.removeEventListener('click', handleImageClick, true); if (lastHoveredImageElement) lastHoveredImageElement.style.outline = ''; document.querySelectorAll('[data-live-edit-id]').forEach(el => el.removeAttribute('data-live-edit-id')); console.log('IFRAME LISTENER: Image Edit Mode Disabled.'); };
-  
   window.addEventListener('message', (event) => { const msg = event.data; if (!msg) return; if (msg.type === 'CSS_OVERRIDE') { if (!overrideStyleTag) { overrideStyleTag = document.createElement('style'); overrideStyleTag.id = 'live-editor-overrides'; document.head.appendChild(overrideStyleTag); } overrideStyleTag.innerHTML = msg.css; } else if (msg.type === 'HIGHLIGHT_ELEMENTS') { if (!highlightStyleTag) { highlightStyleTag = document.createElement('style'); highlightStyleTag.id = 'live-editor-highlight'; document.head.appendChild(highlightStyleTag); } const selectors = msg.selectors; if (selectors && selectors.length > 0) { const selectorString = selectors.join(', '); const highlightRule = selectorString + ' { ' + '  outline: 3px solid #00FFFF !important;' + '  outline-offset: 2px;' + '  box-shadow: 0 0 15px 5px #00FFFF;' + '  transition: outline 0.1s linear, box-shadow 0.1s linear;' + ' }'; highlightStyleTag.innerHTML = highlightRule; } } else if (msg.type === 'CLEAR_HIGHLIGHT') { if (highlightStyleTag) { highlightStyleTag.innerHTML = ''; } } else if (msg.type === 'ENABLE_TEXT_EDIT') { isTextEditEnabled = true; cleanupImageEdit(); isImageEditEnabled = false; document.body.addEventListener('mouseover', handleTextMouseOver); document.body.addEventListener('mouseout', handleTextMouseOut); document.body.addEventListener('click', handleTextClick, true); console.log('IFRAME LISTENER: Text Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_TEXT_EDIT') { isTextEditEnabled = false; cleanupTextEdit(); } else if (msg.type === 'UPDATE_TEXT') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (el) el.innerText = msg.newText; } else if (msg.type === 'ENABLE_IMAGE_EDIT') { isImageEditEnabled = true; cleanupTextEdit(); isTextEditEnabled = false; document.body.addEventListener('mouseover', handleImageMouseOver); document.body.addEventListener('mouseout', handleImageMouseOut); document.body.addEventListener('click', handleImageClick, true); console.log('IFRAME LISTENER: Image Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_IMAGE_EDIT') { isImageEditEnabled = false; cleanupImageEdit(); } else if (msg.type === 'UPDATE_IMAGE') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (!el) return; if (msg.action === 'replace') { if (el.tagName === 'IMG') { el.src = msg.newSrc; } else if (el.tagName === 'SVG') { el.style.display = 'none'; } } else if (msg.action === 'remove') { el.style.visibility = 'hidden'; } else if (msg.action === 'fill') { if (el.tagName === 'IMG') { el.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; el.style.backgroundColor = msg.newColor; } else if (el.tagName === 'SVG') { el.style.fill = msg.newColor; el.querySelectorAll('path').forEach(path => { path.style.fill = msg.newColor; }); } } } });
 `;
 
@@ -126,15 +119,14 @@ export default function Home() {
   const [cssFileName, setCssFileName] = useState('');
   // ---------------------------------------------
 
-  // --- UPDATED: Constants for CSS properties to find ---
-  // --- FIX: Added every specific border-color property ---
+  // --- Constants for CSS properties to find ---
   const COLOR_PROPERTIES = [ 
     'color', 'background-color', 'fill', 'stroke', 'outline-color',
     'border-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
     'background', 'border', 'border-left', 'border-right', 'border-top', 'border-bottom', 
     'box-shadow' 
   ];
-  // -----------------------------------------------------
+  
   const FONT_PROPERTIES = ['font-family'];
   const FONT_SIZE_PROPERTIES = ['font-size'];
   const SPACING_PROPERTIES = [ 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left' ];
@@ -322,9 +314,14 @@ export default function Home() {
     try { new URL(targetUrl); } catch { setErrorMessage('Please enter a valid URL (including https://)'); return; }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      const response = await fetch('http://localhost:3001/api/scrape', {
+      // --- THIS IS THE ONLY LINE YOU NEED TO CHANGE FOR DEPLOYMENT ---
+      // --- PASTE YOUR RENDER URL HERE ---
+      const response = await fetch('https://reedit-ai-backend.onrender.com/api/scrape', {
+      // const response = await fetch('http://localhost:3001/api/scrape', { // Keep this for local testing
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
+      // ---------------------------------------------------------------
+
       if (!response.ok) { const errorData = await response.json().catch(() => ({ error: 'Scrape failed' })); throw new Error(errorData.error || 'Failed to fetch website'); }
       const data = await response.json(); 
       const { processedHtml } = parseAllStyles(data.css, data.html);
@@ -359,6 +356,7 @@ export default function Home() {
     }
   };
   
+  // --- This is the simple frontend-only loader ---
   const handleLoadLocal = () => {
     if (!localHtml || !localCss) {
       setErrorMessage('Please upload both an HTML and a CSS file.');
@@ -396,7 +394,6 @@ export default function Home() {
 
             // If property is a border shorthand (like 'border-bottom'), 
             // we specifically target the color part (border-bottom-color)
-            // so we don't break the border width/style.
             if (propertyToOverride.startsWith('border')) {
               if (!propertyToOverride.endsWith('-color')) {
                 propertyToOverride = propertyToOverride + '-color';
@@ -468,6 +465,19 @@ export default function Home() {
   const handleHighlightStart = (oldColor: string) => { if (!iframeReady || isTextEditMode || isImageEditMode) return; const rules = colorSelectorMap.get(oldColor); if (!rules) return; const uniqueSelectors = [...new Set(rules.map(rule => rule.selector))]; iframeRef.current?.contentWindow?.postMessage( { type: 'HIGHLIGHT_ELEMENTS', selectors: uniqueSelectors }, '*' ); };
   const handleHighlightEnd = () => { if (!iframeReady || isTextEditMode || isImageEditMode) return; iframeRef.current?.contentWindow?.postMessage( { type: 'CLEAR_HIGHLIGHT' }, '*' ); };
 
+  // --- Write to Iframe ---
+  useEffect(() => {
+    if (iframeContent && iframeRef.current) {
+      setIframeReady(false);
+      const doc = iframeRef.current.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(iframeContent);
+        doc.close();
+      }
+    }
+  }, [iframeContent]);
+
   // ------------------------------------------------------------------
   // RENDER UI
   // ------------------------------------------------------------------
@@ -480,7 +490,7 @@ export default function Home() {
           {editingTextElement && ( <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col"> <div className="flex justify-between items-center mb-3"> <h3 className="text-md font-semibold text-fuchsia-400">Edit Text</h3> <button onClick={closeTextEditor} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"> Done </button> </div> <textarea value={editingTextElement.text} onChange={(e) => handleTextEditChange(e.target.value)} className="w-full h-48 p-2 bg-gray-800 border border-gray-600 rounded-md outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm" /> <p className="text-xs text-gray-500 mt-2"> Changes are applied live. Click "Done" to close this editor. </p> </div> )}
           {editingImageElement && ( <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col"> <div className="flex justify-between items-center mb-4"> <h3 className="text-md font-semibold text-blue-400">Edit Image/Icon</h3> <button onClick={closeImageEditor} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"> Done </button> </div> <div className="flex flex-col gap-3"> <label className="w-full px-5 py-2 text-center font-semibold bg-blue-600 rounded-md hover:bg-blue-500 transition-colors cursor-pointer"> Upload & Replace <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} /> </label> <button onClick={handleImageRemove} className="w-full px-5 py-2 font-semibold bg-red-600 rounded-md hover:bg-red-500 transition-colors"> Remove </button> <div className="flex flex-col gap-2 p-3 bg-gray-800 rounded-md"> <p className="text-sm">Fill with color:</p> <div className="flex gap-2"> <input type="color" value={fillColor} className="w-12 h-10 p-0 border-0 rounded cursor-pointer bg-transparent" onChange={(e) => setFillColor(e.target.value)} /> <button onClick={handleImageFill} className="flex-1 px-4 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 transition-colors"> Apply Fill </button> </div> </div> </div> </div> )}
 
-          <h2 className="text-lg font-semibold mb-4">Re:Edit</h2>
+          <h2 className="text-lg font-semibold mb-4">Style Editor</h2>
           
           {/* TABS */}
           <div className="flex w-full border-b border-gray-700 mb-4">
