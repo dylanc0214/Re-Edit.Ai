@@ -7,6 +7,7 @@ import tinycolor from 'tinycolor2';
 
 // ------------------------------------------------------------------
 // SCRIPT TO INJECT INTO IFRAME
+// (This is your working version)
 // ------------------------------------------------------------------
 const iframeListenerScript = `
   console.log('IFRAME LISTENER: Script Injected and RUNNING.');
@@ -307,27 +308,27 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // --- UPDATED: HANDLE SCRAPE (now uses /api/scrape) ---
+  // HANDLE SCRAPE
   // ------------------------------------------------------------------
   const handleScrape = async () => {
     if (!targetUrl) { setErrorMessage('Please enter a URL'); return; }
     try { new URL(targetUrl); } catch { setErrorMessage('Please enter a valid URL (including https://)'); return; }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      // --- THIS IS THE FIX ---
-      // We use a relative path, which will work on localhost AND Vercel
-      const response = await fetch('/api/scrape', { 
+      // --- THIS IS THE ONLY LINE YOU NEED TO CHANGE FOR DEPLOYMENT ---
+      // --- PASTE YOUR RENDER URL HERE ---
+      // const response = await fetch('https://YOUR_RENDER_URL_HERE/api/scrape', {
+      
+      // --- THIS IS THE LOCALHOST URL ---
+      const response = await fetch('http://localhost:3001/api/scrape', { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
-      // -----------------------
+      // ---------------------------------------------------------------
 
       if (!response.ok) { const errorData = await response.json().catch(() => ({ error: 'Scrape failed' })); throw new Error(errorData.error || 'Failed to fetch website'); }
       const data = await response.json(); 
-      
-      // Use the smart CSS from the backend
       const { processedHtml } = parseAllStyles(data.css, data.html);
       prepareIframe(processedHtml, data.css, targetUrl); 
-
     } catch (error: any) {
       setErrorMessage(error.message || 'An error occurred while fetching the website');
     } finally {
@@ -358,30 +359,16 @@ export default function Home() {
     }
   };
   
-  // --- UPDATED: This now calls the backend to get smart CSS ---
-  const handleLoadLocal = async () => {
+  // --- This is the simple frontend-only loader ---
+  const handleLoadLocal = () => {
     if (!localHtml || !localCss) {
       setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
     }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      console.log('--- STARTING LOCAL LOAD (Smart) ---');
-      
-      // --- THIS IS THE FIX ---
-      // We use a relative path, which will work on localhost AND Vercel
-      const response = await fetch('/api/process-local', { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: localHtml, css: localCss }),
-      });
-      // -----------------------
-
-      if (!response.ok) { const errorData = await response.json().catch(() => ({ error: 'Processing failed' })); throw new Error(errorData.error || 'Failed to process files'); }
-      const data = await response.json();
-      
-      // Use the smart CSS from the backend
-      const { processedHtml } = parseAllStyles(data.css, data.html);
-      prepareIframe(processedHtml, data.css, null); 
-
+      const { processedHtml } = parseAllStyles(localCss, localHtml);
+      prepareIframe(processedHtml, localCss, null); 
     } catch (error: any) {
       setErrorMessage(error.message || 'An error occurred while loading local code');
     } finally {
