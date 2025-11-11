@@ -345,7 +345,7 @@ export default function Home() {
 
     try {
       console.log('--- STARTING SCRAPE ---');
-      const response = await fetch('http://localhost:3001/api/scrape', {
+      const response = await fetch('[https://re-edit-ai.onrender.com/api/scrape](https://re-edit-ai-backend.onrender.com/api/scrape)', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
       if (!response.ok) { const errorData = await response.json().catch(() => ({ error: 'Scrape failed' })); throw new Error(errorData.error || 'Failed to fetch website'); }
