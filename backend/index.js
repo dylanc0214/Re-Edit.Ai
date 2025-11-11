@@ -1,5 +1,5 @@
 import express from 'express';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core'; // <-- FIX #1: Use puppeteer-core
 import cors from 'cors';
 import fetch from 'node-fetch';
 
@@ -66,7 +66,7 @@ app.post('/api/scrape', async (req, res) => {
   console.log(`Scraping started for: ${url}`);
   let browser;
   try {
-    // --- THIS IS THE RENDER FIX ---
+    // --- FIX #2: This is the RENDER FIX ---
     browser = await puppeteer.launch({
       headless: 'new',
       args: [
@@ -83,9 +83,16 @@ app.post('/api/scrape', async (req, res) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
     
-    await page.coverage.startCSSCoverage(); 
+    // 1. Go to the page FIRST
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // 2. NOW start the scan
+    await page.coverage.startCSSCoverage(); 
+    
+    // 3. Get the HTML (after goto)
     const htmlContent = await page.content();
+    
+    // 4. Get the used CSS (this will scroll and stop the scan)
     const usedCss = await getUsedCss(page, url); 
 
     await browser.close();
@@ -102,8 +109,12 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-// --- ENDPOINT 2: /api/process-local (We don't need this, Upload Files is frontend-only) ---
-// (We can leave the old code here, it won't be called)
+// --- ENDPOINT 2: /api/process-local (We don't need this) ---
+// This endpoint is not used because "Upload Files" is 100% frontend.
+app.post('/api/process-local', async (req, res) => {
+  res.status(404).json({ error: 'This endpoint is not used in the Vercel+Render setup.' });
+});
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {
