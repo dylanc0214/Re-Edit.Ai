@@ -1,24 +1,19 @@
 {
-  "name": "backend",
+  "name": "reedit-ai-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Scraper backend for ReEditAi",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "express": "^4.19.2",
     "node-fetch": "^3.3.2",
-    "puppeteer": "^21.5.0"
+    "puppeteer": "^22.10.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+  "engines": {
+    "node": "20.x"
   }
 }
