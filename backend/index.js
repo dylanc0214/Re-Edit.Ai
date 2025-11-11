@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json()); // Back to default limit
+app.use(express.json()); 
 
 // --- HELPER: Scroll function ---
 const autoScroll = async (page) => {
@@ -21,14 +21,43 @@ const autoScroll = async (page) => {
         totalHeight += distance;
         if (totalHeight >= scrollHeight - window.innerHeight) {
           clearInterval(timer);
-          resolve();
+          resolve(true);
         }
       }, 100);
     });
   });
 };
 
-// --- ENDPOINT 1: /api/scrape (FIXED) ---
+// --- HELPER: Function to get Used CSS ---
+const getUsedCss = async (page, originalUrl) => {
+  await autoScroll(page); 
+  await new Promise(resolve => setTimeout(resolve, 500)); 
+  const cssCoverage = await page.coverage.stopCSSCoverage();
+  
+  let allUsedCss = '';
+  for (const entry of cssCoverage) {
+    let baseUrl;
+    try { baseUrl = new URL(entry.url); } catch (e) { baseUrl = new URL(originalUrl); }
+    const basePath = baseUrl.origin + baseUrl.pathname.substring(0, baseUrl.pathname.lastIndexOf('/') + 1);
+
+    for (const range of entry.ranges) {
+      let cssText = entry.text.substring(range.start, range.end);
+      cssText = cssText.replace(/url\((['"]?)(?!data:|https?:\/\/|\/\/)([^'")]+)\1\)/g, (match, quote, relativeUrl) => {
+        try {
+          const absoluteUrl = new URL(relativeUrl, basePath).href;
+          return `url(${quote}${absoluteUrl}${quote})`;
+        } catch (e) { 
+          console.warn(`Failed to resolve CSS URL: ${relativeUrl} with base ${basePath}`);
+          return match; 
+        }
+      });
+      allUsedCss += cssText + '\n';
+    }
+  }
+  return allUsedCss;
+};
+
+// --- ENDPOINT 1: /api/scrape (FIXED for Render) ---
 app.post('/api/scrape', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
@@ -37,53 +66,31 @@ app.post('/api/scrape', async (req, res) => {
   console.log(`Scraping started for: ${url}`);
   let browser;
   try {
+    // --- THIS IS THE RENDER FIX ---
     browser = await puppeteer.launch({
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security', '--disable-features=IsolateOrigins,site-per-process'],
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Added this for Render
+        '--single-process' // Added this for Render
+      ],
+      // This tells Puppeteer to use the Chrome that Render already has installed
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, 
     });
+    // --- END OF FIX ---
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
     
-    // 1. Start the scan BEFORE going to the page
     await page.coverage.startCSSCoverage(); 
-    
-    // 2. Go to the page
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-    
-    // 3. Get the HTML
     const htmlContent = await page.content();
-    
-    // 4. Scroll and stop the scan
-    await autoScroll(page);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const cssCoverage = await page.coverage.stopCSSCoverage();
-    
-    // --- Re-added the CSS processing logic here ---
-    let allUsedCss = '';
-    for (const entry of cssCoverage) {
-      let baseUrl;
-      try { baseUrl = new URL(entry.url); } catch (e) { baseUrl = new URL(url); }
-      const basePath = baseUrl.origin + baseUrl.pathname.substring(0, baseUrl.pathname.lastIndexOf('/') + 1);
-
-      for (const range of entry.ranges) {
-        let cssText = entry.text.substring(range.start, range.end);
-        cssText = cssText.replace(/url\((['"]?)(?!data:|https?:\/\/|\/\/)([^'")]+)\1\)/g, (match, quote, relativeUrl) => {
-          try {
-            const absoluteUrl = new URL(relativeUrl, basePath).href;
-            return `url(${quote}${absoluteUrl}${quote})`;
-          } catch (e) { 
-            console.warn(`Failed to resolve CSS URL: ${relativeUrl} with base ${basePath}`);
-            return match; 
-          }
-        });
-        allUsedCss += cssText + '\n';
-      }
-    }
-    // --- End of CSS logic ---
+    const usedCss = await getUsedCss(page, url); 
 
     await browser.close();
-    console.log(`Scraping finished for: ${url}. Sent ${allUsedCss.length} chars of USED CSS.`);
-    res.json({ html: htmlContent, css: allUsedCss }); // Send allUsedCss
+    console.log(`Scraping finished for: ${url}. Sent ${usedCss.length} chars of USED CSS.`);
+    res.json({ html: htmlContent, css: usedCss });
 
   } catch (error) {
     console.error(`Scraping failed for ${url}:`, error);
@@ -95,7 +102,48 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-// --- REMOVED THE BROKEN /api/process-local ENDPOINT ---
+// --- ENDPOINT 2: /api/process-local (FIXED for Render) ---
+app.post('/api/process-local', async (req, res) => {
+  const { html, css } = req.body;
+  if (!html || !css) {
+    return res.status(400).json({ error: 'HTML and CSS content are required' });
+  }
+
+  console.log(`Processing local files...`);
+  let browser;
+  try {
+    // --- THIS IS THE RENDER FIX ---
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Added this for Render
+        '--single-process' // Added this for Render
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    });
+    // --- END OF FIX ---
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.coverage.startCSSCoverage();
+    await page.addStyleTag({ content: css });
+    const usedCss = await getUsedCss(page, 'http://localhost'); 
+
+    await browser.close();
+    console.log(`Local processing finished. Sent ${usedCss.length} chars of USED CSS.`);
+    
+    res.json({ html: html, css: usedCss });
+
+  } catch (error) {
+    console.error(`Local processing failed:`, error);
+    if (browser) await browser.close();
+    res.status(500).json({ error: 'Failed to process local files.' });
+  }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
