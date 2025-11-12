@@ -7,7 +7,7 @@ import tinycolor from 'tinycolor2';
 
 // ------------------------------------------------------------------
 // SCRIPT TO INJECT INTO IFRAME
-// (This is unchanged)
+// (This is your working version)
 // ------------------------------------------------------------------
 const iframeListenerScript = `
   console.log('IFRAME LISTENER: Script Injected and RUNNING.');
@@ -34,7 +34,6 @@ const iframeListenerScript = `
 
 // ------------------------------------------------------------------
 // HELPER FUNCTION: Make URLs Absolute
-// (This is unchanged)
 // ------------------------------------------------------------------
 function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
   if (!baseUrl) {
@@ -329,10 +328,10 @@ export default function Home() {
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
       // --- THIS IS THE DEPLOYMENT URL ---
-      // const response = await fetch('https://YOUR_RENDER_URL_HERE/api/scrape', {
+      const RENDER_URL = 'https://re-edit-ai.onrender.com'; // <--- PASTE YOUR RENDER URL
       
-      // --- THIS IS THE LOCALHOST URL ---
-      const response = await fetch('http://localhost:3001/api/scrape', { 
+      const response = await fetch(`${RENDER_URL}/api/scrape`, { 
+      // const response = await fetch('http://localhost:3001/api/scrape', { // Keep this for local testing
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
       // ---------------------------------------------------------------
