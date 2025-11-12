@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "app/api/scrape/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/process-local/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}

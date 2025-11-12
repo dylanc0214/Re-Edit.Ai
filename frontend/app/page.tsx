@@ -7,7 +7,6 @@ import tinycolor from 'tinycolor2';
 
 // ------------------------------------------------------------------
 // SCRIPT TO INJECT INTO IFRAME
-// (This is your working version)
 // ------------------------------------------------------------------
 const iframeListenerScript = `
   console.log('IFRAME LISTENER: Script Injected and RUNNING.');
@@ -16,19 +15,26 @@ const iframeListenerScript = `
   let highlightStyleTag = null; 
   let isTextEditEnabled = false;
   let lastHoveredTextElement = null;
+  // --- FIX: Added DIV, SPAN, I, B, STRONG to catch all text/emojis ---
   const TEXT_EDIT_TAGS = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'A', 'LI', 'BUTTON', 'LABEL', 'SMALL', 'STRONG', 'EM', 'TIME', 'BLOCKQUOTE', 'TD', 'TH', 'DIV', 'I', 'B'];
+  
   let isImageEditEnabled = false;
   let lastHoveredImageElement = null;
   const IMAGE_EDIT_TAGS = ['IMG', 'SVG']; 
   window.parent.postMessage({ type: 'IFRAME_READY' }, '*');
+  
   const handleTextMouseOver = (event) => { if (!isTextEditEnabled) return; const target = event.target; if (TEXT_EDIT_TAGS.includes(target.tagName)) { lastHoveredTextElement = target; target.style.outline = '2px dashed #FF00FF !important'; target.style.cursor = 'pointer'; } };
   const handleTextMouseOut = (event) => { if (lastHoveredTextElement) { lastHoveredTextElement.style.outline = ''; lastHoveredTextElement.style.cursor = 'default'; lastHoveredTextElement = null; } };
   const handleTextClick = (event) => { if (!isTextEditEnabled || !lastHoveredTextElement) return; event.preventDefault(); event.stopPropagation(); const target = lastHoveredTextElement; const tempId = 'live-edit-text-' + Date.now(); target.setAttribute('data-live-edit-id', tempId); window.parent.postMessage({ type: 'ELEMENT_CLICKED', tempId: tempId, currentText: target.innerText }, '*'); };
+  
   const cleanupTextEdit = () => { document.body.removeEventListener('mouseover', handleTextMouseOver); document.body.removeEventListener('mouseout', handleTextMouseOut); document.body.removeEventListener('click', handleTextClick, true); if (lastHoveredTextElement) lastHoveredTextElement.style.outline = ''; document.querySelectorAll('[data-live-edit-id]').forEach(el => el.removeAttribute('data-live-edit-id')); console.log('IFRAME LISTENER: Text Edit Mode Disabled.'); };
+  
   const handleImageMouseOver = (event) => { if (!isImageEditEnabled) return; const target = event.target; if (IMAGE_EDIT_TAGS.includes(target.tagName)) { lastHoveredImageElement = target; target.style.outline = '3px solid #00A8FF !important'; target.style.cursor = 'pointer'; } };
   const handleImageMouseOut = (event) => { if (lastHoveredImageElement) { lastHoveredImageElement.style.outline = ''; lastHoveredImageElement.style.cursor = 'default'; lastHoveredImageElement = null; } };
   const handleImageClick = (event) => { if (!isImageEditEnabled || !lastHoveredImageElement) return; event.preventDefault(); event.stopPropagation(); const target = lastHoveredImageElement; const tempId = 'live-edit-img-' + Date.now(); target.setAttribute('data-live-edit-id', tempId); let currentSrc = target.tagName === 'IMG' ? target.src : ''; window.parent.postMessage({ type: 'IMAGE_CLICKED', tempId: tempId, tagName: target.tagName, currentSrc: currentSrc }, '*'); };
+  
   const cleanupImageEdit = () => { document.body.removeEventListener('mouseover', handleImageMouseOver); document.body.removeEventListener('mouseout', handleImageMouseOut); document.body.removeEventListener('click', handleImageClick, true); if (lastHoveredImageElement) lastHoveredImageElement.style.outline = ''; document.querySelectorAll('[data-live-edit-id]').forEach(el => el.removeAttribute('data-live-edit-id')); console.log('IFRAME LISTENER: Image Edit Mode Disabled.'); };
+  
   window.addEventListener('message', (event) => { const msg = event.data; if (!msg) return; if (msg.type === 'CSS_OVERRIDE') { if (!overrideStyleTag) { overrideStyleTag = document.createElement('style'); overrideStyleTag.id = 'live-editor-overrides'; document.head.appendChild(overrideStyleTag); } overrideStyleTag.innerHTML = msg.css; } else if (msg.type === 'HIGHLIGHT_ELEMENTS') { if (!highlightStyleTag) { highlightStyleTag = document.createElement('style'); highlightStyleTag.id = 'live-editor-highlight'; document.head.appendChild(highlightStyleTag); } const selectors = msg.selectors; if (selectors && selectors.length > 0) { const selectorString = selectors.join(', '); const highlightRule = selectorString + ' { ' + '  outline: 3px solid #00FFFF !important;' + '  outline-offset: 2px;' + '  box-shadow: 0 0 15px 5px #00FFFF;' + '  transition: outline 0.1s linear, box-shadow 0.1s linear;' + ' }'; highlightStyleTag.innerHTML = highlightRule; } } else if (msg.type === 'CLEAR_HIGHLIGHT') { if (highlightStyleTag) { highlightStyleTag.innerHTML = ''; } } else if (msg.type === 'ENABLE_TEXT_EDIT') { isTextEditEnabled = true; cleanupImageEdit(); isImageEditEnabled = false; document.body.addEventListener('mouseover', handleTextMouseOver); document.body.addEventListener('mouseout', handleTextMouseOut); document.body.addEventListener('click', handleTextClick, true); console.log('IFRAME LISTENER: Text Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_TEXT_EDIT') { isTextEditEnabled = false; cleanupTextEdit(); } else if (msg.type === 'UPDATE_TEXT') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (el) el.innerText = msg.newText; } else if (msg.type === 'ENABLE_IMAGE_EDIT') { isImageEditEnabled = true; cleanupTextEdit(); isTextEditEnabled = false; document.body.addEventListener('mouseover', handleImageMouseOver); document.body.addEventListener('mouseout', handleImageMouseOut); document.body.addEventListener('click', handleImageClick, true); console.log('IFRAME LISTENER: Image Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_IMAGE_EDIT') { isImageEditEnabled = false; cleanupImageEdit(); } else if (msg.type === 'UPDATE_IMAGE') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (!el) return; if (msg.action === 'replace') { if (el.tagName === 'IMG') { el.src = msg.newSrc; } else if (el.tagName === 'SVG') { el.style.display = 'none'; } } else if (msg.action === 'remove') { el.style.visibility = 'hidden'; } else if (msg.action === 'fill') { if (el.tagName === 'IMG') { el.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; el.style.backgroundColor = msg.newColor; } else if (el.tagName === 'SVG') { el.style.fill = msg.newColor; el.querySelectorAll('path').forEach(path => { path.style.fill = msg.newColor; }); } } } });
 `;
 
@@ -293,7 +299,7 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // --- UPDATED: IFRAME PREPARATION ---
+  // --- IFRAME PREPARATION ---
   // ------------------------------------------------------------------
   const prepareIframe = (htmlString: string, cssString: string, baseUrl: string | null) => {
     let processedHtml = htmlString;
@@ -320,26 +326,30 @@ export default function Home() {
 
 
   // ------------------------------------------------------------------
-  // HANDLE SCRAPE
+  // --- UPDATED: HANDLE SCRAPE (now uses /api/scrape) ---
   // ------------------------------------------------------------------
   const handleScrape = async () => {
     if (!targetUrl) { setErrorMessage('Please enter a URL'); return; }
     try { new URL(targetUrl); } catch { setErrorMessage('Please enter a valid URL (including https://)'); return; }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      // --- THIS IS THE DEPLOYMENT URL ---
-      const RENDER_URL = 'https://re-edit-ai.onrender.com'; // <--- PASTE YOUR RENDER URL
-      
-      const response = await fetch(`${RENDER_URL}/api/scrape`, { 
-      // const response = await fetch('http://localhost:3001/api/scrape', { // Keep this for local testing
+      // --- THIS IS THE FIX ---
+      // We use a relative path, which will work on localhost AND Vercel
+      const response = await fetch('/api/scrape', { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
       });
-      // ---------------------------------------------------------------
+      // -----------------------
 
-      if (!response.ok) { const errorData = await response.json().catch(() => ({ error: 'Scrape failed' })); throw new Error(errorData.error || 'Failed to fetch website'); }
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ error: 'Scrape failed with no JSON response' })); 
+        throw new Error(errorData.error || 'Failed to fetch website'); 
+      }
       const data = await response.json(); 
+      
+      // Use the smart CSS from the backend
       const { processedHtml } = parseAllStyles(data.css, data.html);
       prepareIframe(processedHtml, data.css, targetUrl); 
+
     } catch (error: any) {
       setErrorMessage(error.message || 'An error occurred while fetching the website');
     } finally {
@@ -348,7 +358,7 @@ export default function Home() {
   };
   
   // ------------------------------------------------------------------
-  // --- UPLOAD FILES HANDLERS ---
+  // --- UPDATED: UPLOAD FILES HANDLERS (now uses /api/process-local) ---
   // ------------------------------------------------------------------
   const handleHtmlUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -370,16 +380,33 @@ export default function Home() {
     }
   };
   
-  // --- This is the simple frontend-only loader ---
-  const handleLoadLocal = () => {
+  // --- This now calls the backend to get smart CSS ---
+  const handleLoadLocal = async () => {
     if (!localHtml || !localCss) {
       setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
     }
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
     try {
-      const { processedHtml } = parseAllStyles(localCss, localHtml);
-      prepareIframe(processedHtml, localCss, null); 
+      console.log('--- STARTING LOCAL LOAD (Smart) ---');
+      
+      // --- THIS IS THE FIX ---
+      // We use a relative path, which will work on localhost AND Vercel
+      const response = await fetch('/api/process-local', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: localHtml, css: localCss }),
+      });
+      // -----------------------
+
+      if (!response.ok) { 
+        const errorData = await response.json().catch(() => ({ error: 'Processing failed with no JSON response' })); 
+        throw new Error(errorData.error || 'Failed to process files'); 
+      }
+      const data = await response.json();
+      
+      // Use the smart CSS from the backend
+      const { processedHtml } = parseAllStyles(data.css, data.html);
+      prepareIframe(processedHtml, data.css, null); 
+
     } catch (error: any) {
       setErrorMessage(error.message || 'An error occurred while loading local code');
     } finally {
