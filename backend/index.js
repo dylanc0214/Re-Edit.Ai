@@ -1,13 +1,37 @@
 import express from 'express';
-import puppeteer from 'puppeteer-core'; // <-- FIX #1: Use puppeteer-core
+import puppeteer from 'puppeteer-core'; // <-- This must be puppeteer-core
 import cors from 'cors';
 import fetch from 'node-fetch';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Allow big HTML/CSS
+// --- THIS IS THE CORS FIX ---
+// 1. Define who is allowed to call your backend
+const whitelist = [
+  'https://re-edit-ai.vercel.app', // <--- YOUR LIVE VERCEL APP
+  'http://localhost:3000'         // Your local computer for testing
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Check if the origin is in our whitelist OR if it's a Vercel preview URL
+    // (origin.endsWith('.vercel.app') allows your preview deploys)
+    if (!origin || whitelist.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      console.error('CORS error: Origin not allowed:', origin); // Log the bad origin
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+// 2. Use these new, smarter options
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // This line is new! It handles "pre-flight" requests.
+// --- END OF FIX ---
+
+app.use(express.json({ limit: '50mb' }));
 
 // --- HELPER: Scroll function ---
 const autoScroll = async (page) => {
@@ -66,7 +90,7 @@ app.post('/api/scrape', async (req, res) => {
   console.log(`Scraping started for: ${url}`);
   let browser;
   try {
-    // --- FIX #2: This is the RENDER FIX ---
+    // --- THIS IS THE RENDER FIX ---
     browser = await puppeteer.launch({
       headless: 'new',
       args: [
@@ -110,7 +134,6 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 // --- ENDPOINT 2: /api/process-local (We don't need this) ---
-// This endpoint is not used because "Upload Files" is 100% frontend.
 app.post('/api/process-local', async (req, res) => {
   res.status(404).json({ error: 'This endpoint is not used in the Vercel+Render setup.' });
 });
@@ -122,5 +145,6 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Scraper backend running on http://localhost:${PORT}`);
+  // This log is just text, it doesn't do anything.
+  console.log(`Scraper backend is LISTENING on port ${PORT} (provided by Render)`);
 });
