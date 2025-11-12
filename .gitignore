@@ -1,0 +1,12 @@
+# Node.js
+node_modules/
+dist/
+.env
+.env*.local
+
+# Next.js
+frontend/.next/
+
+# OS junk
+.DS_Store
+npm-debug.log*
