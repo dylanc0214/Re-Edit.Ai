@@ -5,9 +5,10 @@ import postcss from 'postcss';
 import html2canvas from 'html2canvas';
 import tinycolor from 'tinycolor2'; 
 
-// ------------------------------------------------------------------
+// Backend URL - change this to your Render URL after deployment
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
 // SCRIPT TO INJECT INTO IFRAME
-// ------------------------------------------------------------------
 const iframeListenerScript = `
   console.log('IFRAME LISTENER: Script Injected and RUNNING.');
   
@@ -15,7 +16,6 @@ const iframeListenerScript = `
   let highlightStyleTag = null; 
   let isTextEditEnabled = false;
   let lastHoveredTextElement = null;
-  // --- FIX: Added DIV, SPAN, I, B, STRONG to catch all text/emojis ---
   const TEXT_EDIT_TAGS = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'A', 'LI', 'BUTTON', 'LABEL', 'SMALL', 'STRONG', 'EM', 'TIME', 'BLOCKQUOTE', 'TD', 'TH', 'DIV', 'I', 'B'];
   
   let isImageEditEnabled = false;
@@ -38,13 +38,10 @@ const iframeListenerScript = `
   window.addEventListener('message', (event) => { const msg = event.data; if (!msg) return; if (msg.type === 'CSS_OVERRIDE') { if (!overrideStyleTag) { overrideStyleTag = document.createElement('style'); overrideStyleTag.id = 'live-editor-overrides'; document.head.appendChild(overrideStyleTag); } overrideStyleTag.innerHTML = msg.css; } else if (msg.type === 'HIGHLIGHT_ELEMENTS') { if (!highlightStyleTag) { highlightStyleTag = document.createElement('style'); highlightStyleTag.id = 'live-editor-highlight'; document.head.appendChild(highlightStyleTag); } const selectors = msg.selectors; if (selectors && selectors.length > 0) { const selectorString = selectors.join(', '); const highlightRule = selectorString + ' { ' + '  outline: 3px solid #00FFFF !important;' + '  outline-offset: 2px;' + '  box-shadow: 0 0 15px 5px #00FFFF;' + '  transition: outline 0.1s linear, box-shadow 0.1s linear;' + ' }'; highlightStyleTag.innerHTML = highlightRule; } } else if (msg.type === 'CLEAR_HIGHLIGHT') { if (highlightStyleTag) { highlightStyleTag.innerHTML = ''; } } else if (msg.type === 'ENABLE_TEXT_EDIT') { isTextEditEnabled = true; cleanupImageEdit(); isImageEditEnabled = false; document.body.addEventListener('mouseover', handleTextMouseOver); document.body.addEventListener('mouseout', handleTextMouseOut); document.body.addEventListener('click', handleTextClick, true); console.log('IFRAME LISTENER: Text Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_TEXT_EDIT') { isTextEditEnabled = false; cleanupTextEdit(); } else if (msg.type === 'UPDATE_TEXT') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (el) el.innerText = msg.newText; } else if (msg.type === 'ENABLE_IMAGE_EDIT') { isImageEditEnabled = true; cleanupTextEdit(); isTextEditEnabled = false; document.body.addEventListener('mouseover', handleImageMouseOver); document.body.addEventListener('mouseout', handleImageMouseOut); document.body.addEventListener('click', handleImageClick, true); console.log('IFRAME LISTENER: Image Edit Mode Enabled.'); } else if (msg.type === 'DISABLE_IMAGE_EDIT') { isImageEditEnabled = false; cleanupImageEdit(); } else if (msg.type === 'UPDATE_IMAGE') { const el = document.querySelector('[data-live-edit-id="' + msg.tempId + '"]'); if (!el) return; if (msg.action === 'replace') { if (el.tagName === 'IMG') { el.src = msg.newSrc; } else if (el.tagName === 'SVG') { el.style.display = 'none'; } } else if (msg.action === 'remove') { el.style.visibility = 'hidden'; } else if (msg.action === 'fill') { if (el.tagName === 'IMG') { el.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; el.style.backgroundColor = msg.newColor; } else if (el.tagName === 'SVG') { el.style.fill = msg.newColor; el.querySelectorAll('path').forEach(path => { path.style.fill = msg.newColor; }); } } } });
 `;
 
-// ------------------------------------------------------------------
 // HELPER FUNCTION: Make URLs Absolute
-// ------------------------------------------------------------------
 function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
-  if (!baseUrl) {
-    return html;
-  }
+  if (!baseUrl) return html;
+  
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -53,14 +50,22 @@ function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
     doc.querySelectorAll('img[src]').forEach(img => {
       const src = img.getAttribute('src');
       if (src && !src.startsWith('data:') && !src.startsWith('http')) {
-        try { img.setAttribute('src', new URL(src, base).href); } catch (e) { console.warn('Failed to convert image URL:', src); }
+        try { 
+          img.setAttribute('src', new URL(src, base).href); 
+        } catch (e) { 
+          console.warn('Failed to convert image URL:', src); 
+        }
       }
     });
     
     doc.querySelectorAll('link[href]:not([rel="stylesheet"])').forEach(link => {
       const href = link.getAttribute('href');
       if (href && !href.startsWith('data:') && !href.startsWith('http')) {
-        try { link.setAttribute('href', new URL(href, base).href); } catch (e) { console.warn('Failed to convert link URL:', href); }
+        try { 
+          link.setAttribute('href', new URL(href, base).href); 
+        } catch (e) { 
+          console.warn('Failed to convert link URL:', href); 
+        }
       }
     });
     
@@ -71,7 +76,9 @@ function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
           try {
             const absoluteUrl = new URL(relativeUrl, base).href;
             return `url(${quote}${absoluteUrl}${quote})`;
-          } catch (e) { return match; }
+          } catch (e) { 
+            return match; 
+          }
         });
         el.setAttribute('style', newStyle);
       }
@@ -84,9 +91,7 @@ function makeUrlsAbsolute(html: string, baseUrl: string | null): string {
   }
 }
 
-// ------------------------------------------------------------------
 // MAIN PAGE COMPONENT
-// ------------------------------------------------------------------
 export default function Home() {
   const [targetUrl, setTargetUrl] = useState('');
   const [iframeContent, setIframeContent] = useState('');
@@ -106,27 +111,26 @@ export default function Home() {
   const [spacingChanges, setSpacingChanges] = useState<Map<string, string>>(new Map());
   const [spacingSelectorMap, setSpacingSelectorMap] = useState<Map<string, { selector: string; property: string }[]>>(new Map());
 
-  // --- Text Edit State ---
+  // Text Edit State
   const [isTextEditMode, setIsTextEditMode] = useState(false);
   const [editingTextElement, setEditingTextElement] = useState<{ id: string; text: string } | null>(null);
   
-  // --- Image Edit State ---
+  // Image Edit State
   const [isImageEditMode, setIsImageEditMode] = useState(false);
   const [editingImageElement, setEditingImageElement] = useState<{ id: string; tagName: string; src: string } | null>(null);
   const [fillColor, setFillColor] = useState('#000000');
   
-  // --- Sidebar State ---
+  // Sidebar State
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   
-  // --- "Upload Files" mode state ---
+  // "Upload Files" mode state
   const [mode, setMode] = useState<'scrape' | 'local'>('scrape');
   const [localHtml, setLocalHtml] = useState('');
   const [localCss, setLocalCss] = useState('');
   const [htmlFileName, setHtmlFileName] = useState('');
   const [cssFileName, setCssFileName] = useState('');
-  // ---------------------------------------------
 
-  // --- Constants for CSS properties to find ---
+  // Constants for CSS properties to find
   const COLOR_PROPERTIES = [ 
     'color', 'background-color', 'fill', 'stroke', 'outline-color',
     'border-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
@@ -136,11 +140,12 @@ export default function Home() {
   
   const FONT_PROPERTIES = ['font-family'];
   const FONT_SIZE_PROPERTIES = ['font-size'];
-  const SPACING_PROPERTIES = [ 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left' ];
+  const SPACING_PROPERTIES = [ 
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left' 
+  ];
 
-  // ------------------------------------------------------------------
   // LISTEN FOR IFRAME MESSAGES
-  // ------------------------------------------------------------------
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'IFRAME_READY') {
@@ -151,7 +156,11 @@ export default function Home() {
         setEditingTextElement({ id: event.data.tempId, text: event.data.currentText });
       }
       if (event.data && event.data.type === 'IMAGE_CLICKED') {
-        setEditingImageElement({ id: event.data.tempId, tagName: event.data.tagName, src: event.data.currentSrc });
+        setEditingImageElement({ 
+          id: event.data.tempId, 
+          tagName: event.data.tagName, 
+          src: event.data.currentSrc 
+        });
         setFillColor('#000000');
       }
     };
@@ -159,9 +168,7 @@ export default function Home() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // ------------------------------------------------------------------
-  // --- CSS PARSING LOGIC ---
-  // ------------------------------------------------------------------
+  // CSS PARSING LOGIC
   const parseAllStyles = (cssString: string, htmlString: string): {
     processedHtml: string;
     colorMap: Map<string, { selector: string; property: string }[]>;
@@ -176,11 +183,10 @@ export default function Home() {
     const newFontSizeSelectorMap = new Map<string, { selector: string; property: string }[]>();
     const newSpacingSelectorMap = new Map<string, { selector: string; property: string }[]>();
     
-    // Regex to find hex, rgb, rgba, hsl, hsla
     const colorRegex = /(#(?:[0-9a-f]{3}){1,2}\b|rgba?\([^)]+\)|hsla?\([^)]+\))/gi;
     const filterList = ['inherit', 'initial', 'auto', 'unset'];
 
-    // --- PART 1: Parse the .css file ---
+    // PART 1: Parse the .css file
     try {
       const root = postcss.parse(cssString);
       root.walkRules(rule => {
@@ -197,28 +203,51 @@ export default function Home() {
             if (matches) { 
               colorsFound = matches; 
             }
-            // Fallback: check if the whole value is a named color
             if (colorsFound.length === 0 && tinycolor(value).isValid()) {
               colorsFound.push(value);
             }
 
             for (const colorValue of colorsFound) {
               const colorObj = tinycolor(colorValue);
-              if (colorObj.isValid()) { const hexColor = colorObj.toHexString(); if (!newColorSelectorMap.has(hexColor)) { newColorSelectorMap.set(hexColor, []); } newColorSelectorMap.get(hexColor)?.push({ selector, property }); }
+              if (colorObj.isValid()) { 
+                const hexColor = colorObj.toHexString(); 
+                if (!newColorSelectorMap.has(hexColor)) { 
+                  newColorSelectorMap.set(hexColor, []); 
+                } 
+                newColorSelectorMap.get(hexColor)?.push({ selector, property }); 
+              }
             }
           }
+          
           // Font Family
           if (FONT_PROPERTIES.includes(propLower)) {
             const fontValue = value.split(',')[0].replace(/['"]/g, '').trim(); 
-            if (fontValue && !filterList.includes(fontValue)) { if (!newFontSelectorMap.has(fontValue)) { newFontSelectorMap.set(fontValue, []); } newFontSelectorMap.get(fontValue)?.push({ selector, property }); }
+            if (fontValue && !filterList.includes(fontValue)) { 
+              if (!newFontSelectorMap.has(fontValue)) { 
+                newFontSelectorMap.set(fontValue, []); 
+              } 
+              newFontSelectorMap.get(fontValue)?.push({ selector, property }); 
+            }
           }
+          
           // Font Size
           if (FONT_SIZE_PROPERTIES.includes(propLower)) {
-            if (value && !filterList.includes(value)) { if (!newFontSizeSelectorMap.has(value)) { newFontSizeSelectorMap.set(value, []); } newFontSizeSelectorMap.get(value)?.push({ selector, property }); }
+            if (value && !filterList.includes(value)) { 
+              if (!newFontSizeSelectorMap.has(value)) { 
+                newFontSizeSelectorMap.set(value, []); 
+              } 
+              newFontSizeSelectorMap.get(value)?.push({ selector, property }); 
+            }
           }
+          
           // Spacing
           if (SPACING_PROPERTIES.includes(propLower)) {
-            if (value && !filterList.includes(value)) { if (!newSpacingSelectorMap.has(value)) { newSpacingSelectorMap.set(value, []); } newSpacingSelectorMap.get(value)?.push({ selector, property }); }
+            if (value && !filterList.includes(value)) { 
+              if (!newSpacingSelectorMap.has(value)) { 
+                newSpacingSelectorMap.set(value, []); 
+              } 
+              newSpacingSelectorMap.get(value)?.push({ selector, property }); 
+            }
           }
         });
       });
@@ -227,7 +256,7 @@ export default function Home() {
       setErrorMessage('Failed to parse the provided CSS file.');
     }
 
-    // --- PART 2: Parse the HTML for inline styles ---
+    // PART 2: Parse the HTML for inline styles
     let processedHtml = htmlString;
     try {
       const doc = new DOMParser().parseFromString(htmlString, 'text/html');
@@ -252,22 +281,48 @@ export default function Home() {
             let colorsFound: string[] = [];
             const matches = value.match(colorRegex);
             if (matches) { colorsFound = matches; }
-            if (colorsFound.length === 0 && tinycolor(value).isValid()) { colorsFound.push(value); }
+            if (colorsFound.length === 0 && tinycolor(value).isValid()) { 
+              colorsFound.push(value); 
+            }
 
             for (const colorValue of colorsFound) {
               const colorObj = tinycolor(colorValue);
-              if (colorObj.isValid()) { const hexColor = colorObj.toHexString(); if (!newColorSelectorMap.has(hexColor)) { newColorSelectorMap.set(hexColor, []); } newColorSelectorMap.get(hexColor)?.push({ selector, property }); }
+              if (colorObj.isValid()) { 
+                const hexColor = colorObj.toHexString(); 
+                if (!newColorSelectorMap.has(hexColor)) { 
+                  newColorSelectorMap.set(hexColor, []); 
+                } 
+                newColorSelectorMap.get(hexColor)?.push({ selector, property }); 
+              }
             }
           }
+          
           if (FONT_PROPERTIES.includes(property)) {
             const fontValue = value.split(',')[0].replace(/['"]/g, '').trim(); 
-            if (fontValue && !filterList.includes(fontValue)) { if (!newFontSelectorMap.has(fontValue)) { newFontSelectorMap.set(fontValue, []); } newFontSelectorMap.get(fontValue)?.push({ selector, property }); }
+            if (fontValue && !filterList.includes(fontValue)) { 
+              if (!newFontSelectorMap.has(fontValue)) { 
+                newFontSelectorMap.set(fontValue, []); 
+              } 
+              newFontSelectorMap.get(fontValue)?.push({ selector, property }); 
+            }
           }
+          
           if (FONT_SIZE_PROPERTIES.includes(property)) {
-            if (value && !filterList.includes(value)) { if (!newFontSizeSelectorMap.has(value)) { newFontSizeSelectorMap.set(value, []); } newFontSizeSelectorMap.get(value)?.push({ selector, property }); }
+            if (value && !filterList.includes(value)) { 
+              if (!newFontSizeSelectorMap.has(value)) { 
+                newFontSizeSelectorMap.set(value, []); 
+              } 
+              newFontSizeSelectorMap.get(value)?.push({ selector, property }); 
+            }
           }
+          
           if (SPACING_PROPERTIES.includes(property)) {
-            if (value && !filterList.includes(value)) { if (!newSpacingSelectorMap.has(value)) { newSpacingSelectorMap.set(value, []); } newSpacingSelectorMap.get(value)?.push({ selector, property }); }
+            if (value && !filterList.includes(value)) { 
+              if (!newSpacingSelectorMap.has(value)) { 
+                newSpacingSelectorMap.set(value, []); 
+              } 
+              newSpacingSelectorMap.get(value)?.push({ selector, property }); 
+            }
           }
         });
       });
@@ -276,18 +331,26 @@ export default function Home() {
       console.error('Failed to parse inline HTML styles:', error);
     }
 
-    // --- PART 3: Set the state ---
+    // PART 3: Set the state
     setColorSelectorMap(newColorSelectorMap);
-    const initialColorMap = new Map<string, string>(); newColorSelectorMap.forEach((_, color) => initialColorMap.set(color, color)); setColorChanges(initialColorMap);
+    const initialColorMap = new Map<string, string>(); 
+    newColorSelectorMap.forEach((_, color) => initialColorMap.set(color, color)); 
+    setColorChanges(initialColorMap);
     
     setFontSelectorMap(newFontSelectorMap);
-    const initialFontMap = new Map<string, string>(); newFontSelectorMap.forEach((_, font) => initialFontMap.set(font, font)); setFontChanges(initialFontMap);
+    const initialFontMap = new Map<string, string>(); 
+    newFontSelectorMap.forEach((_, font) => initialFontMap.set(font, font)); 
+    setFontChanges(initialFontMap);
     
     setFontSizeSelectorMap(newFontSizeSelectorMap);
-    const initialFontSizeMap = new Map<string, string>(); newFontSizeSelectorMap.forEach((_, size) => initialFontSizeMap.set(size, size)); setFontSizeChanges(initialFontSizeMap);
+    const initialFontSizeMap = new Map<string, string>(); 
+    newFontSizeSelectorMap.forEach((_, size) => initialFontSizeMap.set(size, size)); 
+    setFontSizeChanges(initialFontSizeMap);
     
     setSpacingSelectorMap(newSpacingSelectorMap);
-    const initialSpacingMap = new Map<string, string>(); newSpacingSelectorMap.forEach((_, size) => initialSpacingMap.set(size, size)); setSpacingChanges(initialSpacingMap);
+    const initialSpacingMap = new Map<string, string>(); 
+    newSpacingSelectorMap.forEach((_, size) => initialSpacingMap.set(size, size)); 
+    setSpacingChanges(initialSpacingMap);
 
     return { 
       processedHtml, 
@@ -298,55 +361,65 @@ export default function Home() {
     };
   };
 
-  // ------------------------------------------------------------------
-  // --- IFRAME PREPARATION ---
-  // ------------------------------------------------------------------
+  // IFRAME PREPARATION
   const prepareIframe = (htmlString: string, cssString: string, baseUrl: string | null) => {
     let processedHtml = htmlString;
-    if (baseUrl) { processedHtml = makeUrlsAbsolute(htmlString, baseUrl); }
+    if (baseUrl) { 
+      processedHtml = makeUrlsAbsolute(htmlString, baseUrl); 
+    }
 
     const styleTag = `<style>${cssString}</style>`;
     const scriptTag = `<script>${iframeListenerScript}</script>`;
 
-    // --- THIS IS THE FIX ---
-    // 1. Define the aggressive regex
     const allStylesheetLinksRegex = /<link\s+[^>]*?rel=["']stylesheet["'][^>]*?>/gi;
 
-    // 2. Remove ALL original <script> tags AND <link rel="stylesheet"> tags
     const cleanedHtml = processedHtml
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "") // Remove all scripts
-      .replace(allStylesheetLinksRegex, ""); // <-- REMOVE ALL STYLESHEETS
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "")
+      .replace(allStylesheetLinksRegex, "");
 
-    // 3. NOW, inject our own script and style tags into the clean <head>
     const finalHtml = cleanedHtml.replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
-    // --- END OF FIX ---
 
     setIframeContent(finalHtml);
   };
 
-
-  // ------------------------------------------------------------------
-  // --- UPDATED: HANDLE SCRAPE (now uses /api/scrape) ---
-  // ------------------------------------------------------------------
+  // HANDLE SCRAPE
   const handleScrape = async () => {
-    if (!targetUrl) { setErrorMessage('Please enter a URL'); return; }
-    try { new URL(targetUrl); } catch { setErrorMessage('Please enter a valid URL (including https://)'); return; }
-    setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
+    if (!targetUrl) {
+setErrorMessage('Please enter a URL'); 
+      return; 
+    }
+    
+    try { 
+      new URL(targetUrl); 
+    } catch { 
+      setErrorMessage('Please enter a valid URL (including https://)'); 
+      return; 
+    }
+    
+    setIsLoading(true); 
+    setIframeContent(''); 
+    setIframeReady(false); 
+    setErrorMessage(''); 
+    setIsTextEditMode(false); 
+    setEditingTextElement(null); 
+    setIsImageEditMode(false); 
+    setEditingImageElement(null);
+    
     try {
-      // --- THIS IS THE FIX ---
-      // We use a relative path, which will work on localhost AND Vercel
-      const response = await fetch('/api/scrape', { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }),
+      const response = await fetch(`${BACKEND_URL}/api/scrape`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ url: targetUrl }),
       });
-      // -----------------------
 
       if (!response.ok) { 
-        const errorData = await response.json().catch(() => ({ error: 'Scrape failed with no JSON response' })); 
+        const errorData = await response.json().catch(() => ({ 
+          error: 'Scrape failed with no JSON response' 
+        })); 
         throw new Error(errorData.error || 'Failed to fetch website'); 
       }
-      const data = await response.json(); 
       
-      // Use the smart CSS from the backend
+      const data = await response.json(); 
       const { processedHtml } = parseAllStyles(data.css, data.html);
       prepareIframe(processedHtml, data.css, targetUrl); 
 
@@ -357,15 +430,15 @@ export default function Home() {
     }
   };
   
-  // ------------------------------------------------------------------
-  // --- UPDATED: UPLOAD FILES HANDLERS (now uses /api/process-local) ---
-  // ------------------------------------------------------------------
+  // UPLOAD FILES HANDLERS
   const handleHtmlUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setHtmlFileName(file.name);
       const reader = new FileReader();
-      reader.onload = (e) => { setLocalHtml(e.target?.result as string); };
+      reader.onload = (e) => { 
+        setLocalHtml(e.target?.result as string); 
+      };
       reader.readAsText(file);
     }
   };
@@ -375,35 +448,45 @@ export default function Home() {
     if (file) {
       setCssFileName(file.name);
       const reader = new FileReader();
-      reader.onload = (e) => { setLocalCss(e.target?.result as string); };
+      reader.onload = (e) => { 
+        setLocalCss(e.target?.result as string); 
+      };
       reader.readAsText(file);
     }
   };
   
-  // --- This now calls the backend to get smart CSS ---
   const handleLoadLocal = async () => {
     if (!localHtml || !localCss) {
       setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
     }
-    setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
+    
+    setIsLoading(true); 
+    setIframeContent(''); 
+    setIframeReady(false); 
+    setErrorMessage(''); 
+    setIsTextEditMode(false); 
+    setEditingTextElement(null); 
+    setIsImageEditMode(false); 
+    setEditingImageElement(null);
+    
     try {
       console.log('--- STARTING LOCAL LOAD (Smart) ---');
       
-      // --- THIS IS THE FIX ---
-      // We use a relative path, which will work on localhost AND Vercel
-      const response = await fetch('/api/process-local', { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: localHtml, css: localCss }),
+      const response = await fetch(`${BACKEND_URL}/api/process-local`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ html: localHtml, css: localCss }),
       });
-      // -----------------------
 
       if (!response.ok) { 
-        const errorData = await response.json().catch(() => ({ error: 'Processing failed with no JSON response' })); 
+        const errorData = await response.json().catch(() => ({ 
+          error: 'Processing failed with no JSON response' 
+        })); 
         throw new Error(errorData.error || 'Failed to process files'); 
       }
-      const data = await response.json();
       
-      // Use the smart CSS from the backend
+      const data = await response.json();
       const { processedHtml } = parseAllStyles(data.css, data.html);
       prepareIframe(processedHtml, data.css, null); 
 
@@ -414,16 +497,17 @@ export default function Home() {
     }
   };
 
-  // ------------------------------------------------------------------
-  // --- GENERATE & POST OVERRIDES ---
-  // ------------------------------------------------------------------
+  // GENERATE & POST OVERRIDES
   const generateAndPostOverrides = (
     newColorMap: Map<string, string>,
     newFontMap: Map<string, string>,
     newFontSizeMap: Map<string, string>,
     newSpacingMap: Map<string, string>
   ) => {
-    if (!iframeReady) { return; }
+    if (!iframeReady) { 
+      return; 
+    }
+    
     let overrideCss = '';
     
     newColorMap.forEach((newColor, oldColor) => {
@@ -433,8 +517,6 @@ export default function Home() {
           rules.forEach(rule => {
             let propertyToOverride = rule.property.toLowerCase();
 
-            // If property is a border shorthand (like 'border-bottom'), 
-            // we specifically target the color part (border-bottom-color)
             if (propertyToOverride.startsWith('border')) {
               if (!propertyToOverride.endsWith('-color')) {
                 propertyToOverride = propertyToOverride + '-color';
@@ -448,65 +530,229 @@ export default function Home() {
     });
     
     newFontMap.forEach((newFont, oldFont) => {
-      if (newFont !== oldFont) { const rules = fontSelectorMap.get(oldFont); if (rules) { const safeFont = newFont.includes(' ') ? `'${newFont}'` : newFont; rules.forEach(rule => { overrideCss += `${rule.selector} { ${rule.property}: ${safeFont}, sans-serif !important; }\n`; }); } }
+      if (newFont !== oldFont) { 
+        const rules = fontSelectorMap.get(oldFont); 
+        if (rules) { 
+          const safeFont = newFont.includes(' ') ? `'${newFont}'` : newFont; 
+          rules.forEach(rule => { 
+            overrideCss += `${rule.selector} { ${rule.property}: ${safeFont}, sans-serif !important; }\n`; 
+          }); 
+        } 
+      }
     });
+    
     newFontSizeMap.forEach((newSize, oldSize) => {
-      if (newSize !== oldSize) { const rules = fontSizeSelectorMap.get(oldSize); if (rules) { rules.forEach(rule => { overrideCss += `${rule.selector} { ${rule.property}: ${newSize} !important; }\n`; }); } }
+      if (newSize !== oldSize) { 
+        const rules = fontSizeSelectorMap.get(oldSize); 
+        if (rules) { 
+          rules.forEach(rule => { 
+            overrideCss += `${rule.selector} { ${rule.property}: ${newSize} !important; }\n`; 
+          }); 
+        } 
+      }
     });
+    
     newSpacingMap.forEach((newValue, oldValue) => {
-      if (newValue !== oldValue) { const rules = spacingSelectorMap.get(oldValue); if (rules) { rules.forEach(rule => { overrideCss += `${rule.selector} { ${rule.property}: ${newValue} !important; }\n`; }); } }
+      if (newValue !== oldValue) { 
+        const rules = spacingSelectorMap.get(oldValue); 
+        if (rules) { 
+          rules.forEach(rule => { 
+            overrideCss += `${rule.selector} { ${rule.property}: ${newValue} !important; }\n`; 
+          }); 
+        } 
+      }
     });
 
-    iframeRef.current?.contentWindow?.postMessage({ type: 'CSS_OVERRIDE', css: overrideCss }, '*');
+    iframeRef.current?.contentWindow?.postMessage({ 
+      type: 'CSS_OVERRIDE', 
+      css: overrideCss 
+    }, '*');
   };
   
-  // ------------------------------------------------------------------
   // APPLY OVERRIDES
-  // ------------------------------------------------------------------
   useEffect(() => {
     if (iframeReady && (colorChanges.size > 0 || fontChanges.size > 0 || fontSizeChanges.size > 0 || spacingChanges.size > 0)) {
       generateAndPostOverrides(colorChanges, fontChanges, fontSizeChanges, spacingChanges);
     }
   }, [iframeReady, colorChanges, fontChanges, fontSizeChanges, spacingChanges]);
 
-  // ------------------------------------------------------------------
   // CHANGE HANDLERS
-  // ------------------------------------------------------------------
-  const handleColorChange = (oldColor: string, newColor: string) => { const newMap = new Map(colorChanges); newMap.set(oldColor, newColor); setColorChanges(newMap); generateAndPostOverrides(newMap, fontChanges, fontSizeChanges, spacingChanges); };
-  const handleFontChange = (oldFont: string, newFont: string) => { const newMap = new Map(fontChanges); newMap.set(oldFont, newFont); setFontChanges(newMap); generateAndPostOverrides(colorChanges, newMap, fontSizeChanges, spacingChanges); };
-  const handleFontSizeChange = (oldSize: string, newSize: string) => { const newMap = new Map(fontSizeChanges); newMap.set(oldSize, newSize); setFontSizeChanges(newMap); generateAndPostOverrides(colorChanges, fontChanges, newMap, spacingChanges); };
-  const handleSpacingChange = (oldValue: string, newValue: string) => { const newMap = new Map(spacingChanges); newMap.set(oldValue, newValue); setSpacingChanges(newMap); generateAndPostOverrides(colorChanges, fontChanges, fontSizeChanges, newMap); };
-
-  // --- Text/Image Edit Handlers ---
-  const toggleTextEditMode = () => { const newMode = !isTextEditMode; setIsTextEditMode(newMode); if (newMode) { if (isImageEditMode) toggleImageEditMode(); iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_TEXT_EDIT' }, '*'); } else { iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_TEXT_EDIT' }, '*'); setEditingTextElement(null); } };
-  const handleTextEditChange = (newText: string) => { if (!editingTextElement) return; setEditingTextElement({ ...editingTextElement, text: newText }); iframeRef.current?.contentWindow?.postMessage({ type: 'UPDATE_TEXT', tempId: editingTextElement.id, newText: newText }, '*'); };
-  const closeTextEditor = () => { setEditingTextElement(null); };
-  const toggleImageEditMode = () => { const newMode = !isImageEditMode; setIsImageEditMode(newMode); if (newMode) { if (isTextEditMode) toggleTextEditMode(); iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_IMAGE_EDIT' }, '*'); } else { iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_IMAGE_EDIT' }, '*'); setEditingImageElement(null); } };
-  const closeImageEditor = () => { setEditingImageElement(null); };
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => { if (!event.target.files?.[0] || !editingImageElement) return; const reader = new FileReader(); reader.onload = () => { iframeRef.current?.contentWindow?.postMessage({ type: 'UPDATE_IMAGE', tempId: editingImageElement.id, action: 'replace', newSrc: reader.result, tagName: editingImageElement.tagName }, '*'); closeImageEditor(); }; reader.readAsDataURL(event.target.files[0]); event.target.value = ''; };
-  const handleImageRemove = () => { if (!editingImageElement) return; iframeRef.current?.contentWindow?.postMessage({ type: 'UPDATE_IMAGE', tempId: editingImageElement.id, action: 'remove', tagName: editingImageElement.tagName }, '*'); closeImageEditor(); };
-  const handleImageFill = () => { if (!editingImageElement) return; iframeRef.current?.contentWindow?.postMessage({ type: 'UPDATE_IMAGE', tempId: editingImageElement.id, action: 'fill', newColor: fillColor, tagName: editingImageElement.tagName }, '*'); closeImageEditor(); };
+  const handleColorChange = (oldColor: string, newColor: string) => { 
+    const newMap = new Map(colorChanges); 
+    newMap.set(oldColor, newColor); 
+    setColorChanges(newMap); 
+    generateAndPostOverrides(newMap, fontChanges, fontSizeChanges, spacingChanges); 
+  };
   
-  // --- Export Handler ---
+  const handleFontChange = (oldFont: string, newFont: string) => { 
+    const newMap = new Map(fontChanges); 
+    newMap.set(oldFont, newFont); 
+    setFontChanges(newMap); 
+    generateAndPostOverrides(colorChanges, newMap, fontSizeChanges, spacingChanges); 
+  };
+  
+  const handleFontSizeChange = (oldSize: string, newSize: string) => { 
+    const newMap = new Map(fontSizeChanges); 
+    newMap.set(oldSize, newSize); 
+    setFontSizeChanges(newMap); 
+    generateAndPostOverrides(colorChanges, fontChanges, newMap, spacingChanges); 
+  };
+  
+  const handleSpacingChange = (oldValue: string, newValue: string) => { 
+    const newMap = new Map(spacingChanges); 
+    newMap.set(oldValue, newValue); 
+    setSpacingChanges(newMap); 
+    generateAndPostOverrides(colorChanges, fontChanges, fontSizeChanges, newMap); 
+  };
+
+  // TEXT/IMAGE EDIT HANDLERS
+  const toggleTextEditMode = () => { 
+    const newMode = !isTextEditMode; 
+    setIsTextEditMode(newMode); 
+    
+    if (newMode) { 
+      if (isImageEditMode) toggleImageEditMode(); 
+      iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_TEXT_EDIT' }, '*'); 
+    } else { 
+      iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_TEXT_EDIT' }, '*'); 
+      setEditingTextElement(null); 
+    } 
+  };
+  
+  const handleTextEditChange = (newText: string) => { 
+    if (!editingTextElement) return; 
+    setEditingTextElement({ ...editingTextElement, text: newText }); 
+    iframeRef.current?.contentWindow?.postMessage({ 
+      type: 'UPDATE_TEXT', 
+      tempId: editingTextElement.id, 
+      newText: newText 
+    }, '*'); 
+  };
+  
+  const closeTextEditor = () => { 
+    setEditingTextElement(null); 
+  };
+  
+  const toggleImageEditMode = () => { 
+    const newMode = !isImageEditMode; 
+    setIsImageEditMode(newMode); 
+    
+    if (newMode) { 
+      if (isTextEditMode) toggleTextEditMode(); 
+      iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_IMAGE_EDIT' }, '*'); 
+    } else { 
+      iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_IMAGE_EDIT' }, '*'); 
+      setEditingImageElement(null); 
+    } 
+  };
+  
+  const closeImageEditor = () => { 
+    setEditingImageElement(null); 
+  };
+  
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => { 
+    if (!event.target.files?.[0] || !editingImageElement) return; 
+    
+    const reader = new FileReader(); 
+    reader.onload = () => { 
+      iframeRef.current?.contentWindow?.postMessage({ 
+        type: 'UPDATE_IMAGE', 
+        tempId: editingImageElement.id, 
+        action: 'replace', 
+        newSrc: reader.result, 
+        tagName: editingImageElement.tagName 
+      }, '*'); 
+      closeImageEditor(); 
+    }; 
+    reader.readAsDataURL(event.target.files[0]); 
+    event.target.value = ''; 
+  };
+  
+  const handleImageRemove = () => { 
+    if (!editingImageElement) return; 
+    iframeRef.current?.contentWindow?.postMessage({ 
+      type: 'UPDATE_IMAGE', 
+      tempId: editingImageElement.id, 
+      action: 'remove', 
+      tagName: editingImageElement.tagName 
+    }, '*'); 
+    closeImageEditor(); 
+  };
+  
+  const handleImageFill = () => { 
+    if (!editingImageElement) return; 
+    iframeRef.current?.contentWindow?.postMessage({ 
+      type: 'UPDATE_IMAGE', 
+      tempId: editingImageElement.id, 
+      action: 'fill', 
+      newColor: fillColor, 
+      tagName: editingImageElement.tagName 
+    }, '*'); 
+    closeImageEditor(); 
+  };
+  
+  // EXPORT HANDLER
   const handleExport = async () => {
-    if (!iframeRef.current?.contentWindow) { setErrorMessage('Please fetch a website first.'); return; }
-    setIsExporting(true); setErrorMessage('');
+    if (!iframeRef.current?.contentWindow) { 
+      setErrorMessage('Please fetch a website first.'); 
+      return; 
+    }
+    
+    setIsExporting(true); 
+    setErrorMessage('');
+    
     if (isTextEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_TEXT_EDIT' }, '*');
     if (isImageEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'DISABLE_IMAGE_EDIT' }, '*');
+    
     try {
       const iframeBody = iframeRef.current.contentWindow.document.body;
       await new Promise(resolve => setTimeout(resolve, 500));
-      const canvas = await html2canvas(iframeBody, { allowTaint: true, useCORS: true, width: iframeBody.scrollWidth, height: iframeBody.scrollHeight, windowWidth: iframeBody.scrollWidth, windowHeight: iframeBody.scrollHeight, logging: false });
-      const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = `website-export-${Date.now()}.png`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    } catch (error) { setErrorMessage('Failed to export image.'); } 
-    finally { setIsExporting(false); if (isTextEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_TEXT_EDIT' }, '*'); if (isImageEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_IMAGE_EDIT' }, '*'); }
+      
+      const canvas = await html2canvas(iframeBody, { 
+        allowTaint: true, 
+        useCORS: true, 
+        width: iframeBody.scrollWidth, 
+        height: iframeBody.scrollHeight, 
+        windowWidth: iframeBody.scrollWidth, 
+        windowHeight: iframeBody.scrollHeight, 
+        logging: false 
+      });
+      
+      const link = document.createElement('a'); 
+      link.href = canvas.toDataURL('image/png'); 
+      link.download = `website-export-${Date.now()}.png`; 
+      document.body.appendChild(link); 
+      link.click(); 
+      document.body.removeChild(link);
+    } catch (error) { 
+      setErrorMessage('Failed to export image.'); 
+    } finally { 
+      setIsExporting(false); 
+      if (isTextEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_TEXT_EDIT' }, '*'); 
+      if (isImageEditMode) iframeRef.current?.contentWindow?.postMessage({ type: 'ENABLE_IMAGE_EDIT' }, '*'); 
+    }
   };
   
-  // --- Highlight Handlers ---
-  const handleHighlightStart = (oldColor: string) => { if (!iframeReady || isTextEditMode || isImageEditMode) return; const rules = colorSelectorMap.get(oldColor); if (!rules) return; const uniqueSelectors = [...new Set(rules.map(rule => rule.selector))]; iframeRef.current?.contentWindow?.postMessage( { type: 'HIGHLIGHT_ELEMENTS', selectors: uniqueSelectors }, '*' ); };
-  const handleHighlightEnd = () => { if (!iframeReady || isTextEditMode || isImageEditMode) return; iframeRef.current?.contentWindow?.postMessage( { type: 'CLEAR_HIGHLIGHT' }, '*' ); };
+  // HIGHLIGHT HANDLERS
+  const handleHighlightStart = (oldColor: string) => { 
+    if (!iframeReady || isTextEditMode || isImageEditMode) return; 
+    
+    const rules = colorSelectorMap.get(oldColor); 
+    if (!rules) return; 
+    
+    const uniqueSelectors = [...new Set(rules.map(rule => rule.selector))]; 
+    iframeRef.current?.contentWindow?.postMessage({ 
+      type: 'HIGHLIGHT_ELEMENTS', 
+      selectors: uniqueSelectors 
+    }, '*'); 
+  };
+  
+  const handleHighlightEnd = () => { 
+    if (!iframeReady || isTextEditMode || isImageEditMode) return; 
+    iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_HIGHLIGHT' }, '*'); 
+  };
 
-  // --- Write to Iframe ---
+  // WRITE TO IFRAME
   useEffect(() => {
     if (iframeContent && iframeRef.current) {
       setIframeReady(false);
@@ -519,71 +765,366 @@ export default function Home() {
     }
   }, [iframeContent]);
 
-  // ------------------------------------------------------------------
   // RENDER UI
-  // ------------------------------------------------------------------
   return (
     <main className="flex flex-row w-full h-screen bg-gray-900 text-white">
       {/* LEFT SIDEBAR */}
       {isSidebarVisible && (
         <div className="flex flex-col w-96 p-4 border-r border-gray-700 overflow-y-auto shrink-0 relative">
-          {/* Editors */}
-          {editingTextElement && ( <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col"> <div className="flex justify-between items-center mb-3"> <h3 className="text-md font-semibold text-fuchsia-400">Edit Text</h3> <button onClick={closeTextEditor} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"> Done </button> </div> <textarea value={editingTextElement.text} onChange={(e) => handleTextEditChange(e.target.value)} className="w-full h-48 p-2 bg-gray-800 border border-gray-600 rounded-md outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm" /> <p className="text-xs text-gray-500 mt-2"> Changes are applied live. Click "Done" to close this editor. </p> </div> )}
-          {editingImageElement && ( <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col"> <div className="flex justify-between items-center mb-4"> <h3 className="text-md font-semibold text-blue-400">Edit Image/Icon</h3> <button onClick={closeImageEditor} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"> Done </button> </div> <div className="flex flex-col gap-3"> <label className="w-full px-5 py-2 text-center font-semibold bg-blue-600 rounded-md hover:bg-blue-500 transition-colors cursor-pointer"> Upload & Replace <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} /> </label> <button onClick={handleImageRemove} className="w-full px-5 py-2 font-semibold bg-red-600 rounded-md hover:bg-red-500 transition-colors"> Remove </button> <div className="flex flex-col gap-2 p-3 bg-gray-800 rounded-md"> <p className="text-sm">Fill with color:</p> <div className="flex gap-2"> <input type="color" value={fillColor} className="w-12 h-10 p-0 border-0 rounded cursor-pointer bg-transparent" onChange={(e) => setFillColor(e.target.value)} /> <button onClick={handleImageFill} className="flex-1 px-4 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 transition-colors"> Apply Fill </button> </div> </div> </div> </div> )}
+          {/* Text Editor Overlay */}
+          {editingTextElement && (
+            <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-md font-semibold text-fuchsia-400">Edit Text</h3>
+                <button 
+                  onClick={closeTextEditor} 
+                  className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+                >
+                  Done
+                </button>
+              </div>
+              <textarea 
+                value={editingTextElement.text} 
+                onChange={(e) => handleTextEditChange(e.target.value)} 
+                className="w-full h-48 p-2 bg-gray-800 border border-gray-600 rounded-md outline-none focus:ring-2 focus:ring-fuchsia-500 text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Changes are applied live. Click "Done" to close this editor.
+              </p>
+            </div>
+          )}
+          
+          {/* Image Editor Overlay */}
+          {editingImageElement && (
+            <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-10 p-4 flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-md font-semibold text-blue-400">Edit Image/Icon</h3>
+                <button 
+                  onClick={closeImageEditor} 
+                  className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+                >
+                  Done
+                </button>
+              </div>
+              <div className="flex flex-col gap-3">
+                <label className="w-full px-5 py-2 text-center font-semibold bg-blue-600 rounded-md hover:bg-blue-500 transition-colors cursor-pointer">
+                  Upload & Replace
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleImageUpload}
+                  />
+                </label>
+                <button 
+                  onClick={handleImageRemove} 
+                  className="w-full px-5 py-2 font-semibold bg-red-600 rounded-md hover:bg-red-500 transition-colors"
+                >
+                  Remove
+                </button>
+                <div className="flex flex-col gap-2 p-3 bg-gray-800 rounded-md">
+                  <p className="text-sm">Fill with color:</p>
+                  <div className="flex gap-2">
+                    <input 
+                      type="color" 
+                      value={fillColor} 
+                      className="w-12 h-10 p-0 border-0 rounded cursor-pointer bg-transparent" 
+                      onChange={(e) => setFillColor(e.target.value)}
+                    />
+                    <button 
+                      onClick={handleImageFill} 
+                      className="flex-1 px-4 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 transition-colors"
+                    >
+                      Apply Fill
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <h2 className="text-lg font-semibold mb-4">Re:Edit</h2>
           
           {/* TABS */}
           <div className="flex w-full border-b border-gray-700 mb-4">
-            <button onClick={() => setMode('scrape')} className={`flex-1 py-2 text-sm font-medium ${mode === 'scrape' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>Scrape URL</button>
-            <button onClick={() => setMode('local')} className={`flex-1 py-2 text-sm font-medium ${mode === 'local' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>Upload Files</button>
+            <button 
+              onClick={() => setMode('scrape')} 
+              className={`flex-1 py-2 text-sm font-medium ${
+                mode === 'scrape' 
+                  ? 'text-blue-400 border-b-2 border-blue-400' 
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              Scrape URL
+            </button>
+            <button 
+              onClick={() => setMode('local')} 
+              className={`flex-1 py-2 text-sm font-medium ${
+                mode === 'local' 
+                  ? 'text-blue-400 border-b-2 border-blue-400' 
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              Upload Files
+            </button>
           </div>
 
           <div className="flex flex-col gap-2 mb-6">
             {mode === 'scrape' && (
               <>
-                <input type="text" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleScrape()} placeholder="E.g., https://example.com" className="w-full p-2 bg-gray-800 border border-gray-600 rounded-md outline-none focus:ring-2 focus:ring-blue-500" disabled={isTextEditMode || isImageEditMode} />
-                <button onClick={handleScrape} disabled={isLoading || isExporting || isTextEditMode || isImageEditMode} className="w-full px-5 py-2 font-semibold bg-blue-600 rounded-md hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"> {isLoading ? 'Loading...' : 'Fetch Website'} </button>
+                <input 
+                  type="text" 
+                  value={targetUrl} 
+                  onChange={(e) => setTargetUrl(e.target.value)} 
+                  onKeyDown={(e) => e.key === 'Enter' && handleScrape()} 
+                  placeholder="E.g., https://example.com" 
+                  className="w-full p-2 bg-gray-800 border border-gray-600 rounded-md outline-none focus:ring-2 focus:ring-blue-500" 
+                  disabled={isTextEditMode || isImageEditMode}
+                />
+                <button 
+                  onClick={handleScrape} 
+                  disabled={isLoading || isExporting || isTextEditMode || isImageEditMode} 
+                  className="w-full px-5 py-2 font-semibold bg-blue-600 rounded-md hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoading ? 'Loading...' : 'Fetch Website'}
+                </button>
               </>
             )}
             
             {mode === 'local' && (
               <div className="flex flex-col gap-3">
-                <div className="p-3 bg-gray-800 border border-gray-700 rounded-md text-sm"> <p className="font-semibold mb-2 text-blue-300">How to Upload (for login pages):</p> <ol className="list-decimal list-inside text-gray-400 space-y-1 text-xs"> <li>Log in to your page in your own browser.</li> <li>Right-click {'>'} <strong>Save As...</strong></li> <li>For "Format", choose <strong>"Webpage, HTML Only"</strong>.</li> <li>Find your project's <strong>.css</strong> file.</li> <li>Upload both files below.</li> </ol> </div>
-                <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer"> {htmlFileName ? htmlFileName : 'Upload HTML File'} <input type="file" accept=".html,.htm" className="hidden" onChange={handleHtmlUpload} /> </label>
-                <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer"> {cssFileName ? cssFileName : 'Upload CSS File'} <input type="file" accept=".css" className="hidden" onChange={handleCssUpload} /> </label>
-                <button onClick={handleLoadLocal} disabled={isLoading || isExporting || isTextEditMode || isImageEditMode} className="w-full px-5 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"> {isLoading ? 'Loading...' : 'Load Preview'} </button>
+                <div className="p-3 bg-gray-800 border border-gray-700 rounded-md text-sm">
+                  <p className="font-semibold mb-2 text-blue-300">How to Upload (for login pages):</p>
+                  <ol className="list-decimal list-inside text-gray-400 space-y-1 text-xs">
+                    <li>Log in to your page in your own browser.</li>
+                    <li>Right-click {'>'} <strong>Save As...</strong></li>
+                    <li>For "Format", choose <strong>"Webpage, HTML Only"</strong>.</li>
+                    <li>Find your project's <strong>.css</strong> file.</li>
+                    <li>Upload both files below.</li>
+                  </ol>
+                </div>
+                <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer">
+                  {htmlFileName ? htmlFileName : 'Upload HTML File'}
+                  <input 
+                    type="file" 
+                    accept=".html,.htm" 
+                    className="hidden" 
+                    onChange={handleHtmlUpload}
+                  />
+                </label>
+                <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer">
+                  {cssFileName ? cssFileName : 'Upload CSS File'}
+                  <input 
+                    type="file" 
+                    accept=".css" 
+                    className="hidden" 
+                    onChange={handleCssUpload}
+                  />
+                </label>
+                <button 
+                  onClick={handleLoadLocal} 
+                  disabled={isLoading || isExporting || isTextEditMode || isImageEditMode} 
+                  className="w-full px-5 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoading ? 'Loading...' : 'Load Preview'}
+                </button>
               </div>
             )}
 
             <hr className="border-gray-700 my-2" />
             
-            <button onClick={handleExport} disabled={isLoading || isExporting || !iframeContent || !iframeReady} className="w-full px-5 py-2 font-semibold bg-gray-700 rounded-md hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"> {isExporting ? 'Exporting...' : 'Export as PNG'} </button>
-            <button onClick={() => toggleTextEditMode()} disabled={isLoading || isExporting || !iframeContent || !iframeReady} className={`w-full px-5 py-2 font-semibold rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed ${isTextEditMode ? 'bg-fuchsia-600 hover:bg-fuchsia-500' : 'bg-gray-700 hover:bg-gray-600'}`}> {isTextEditMode ? 'Stop Editing Text' : 'Edit Text'} </button>
-            <button onClick={() => toggleImageEditMode()} disabled={isLoading || isExporting || !iframeContent || !iframeReady} className={`w-full px-5 py-2 font-semibold rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed ${isImageEditMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}> {isImageEditMode ? 'Stop Editing Images' : 'Edit Images'} </button>
-            {errorMessage && ( <div className="p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200"> {errorMessage} </div> )}
-            {iframeContent && !iframeReady && ( <div className="p-3 bg-yellow-900/50 border border-yellow-700 rounded-md text-sm text-yellow-200"> Initializing preview... </div> )}
+            <button 
+              onClick={handleExport} 
+              disabled={isLoading || isExporting || !iframeContent || !iframeReady} 
+              className="w-full px-5 py-2 font-semibold bg-gray-700 rounded-md hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+            >
+              {isExporting ? 'Exporting...' : 'Export as PNG'}
+            </button>
+            
+            <button 
+              onClick={() => toggleTextEditMode()} 
+              disabled={isLoading || isExporting || !iframeContent || !iframeReady} 
+              className={`w-full px-5 py-2 font-semibold rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed ${
+                isTextEditMode 
+                  ? 'bg-fuchsia-600 hover:bg-fuchsia-500' 
+                  : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              {isTextEditMode ? 'Stop Editing Text' : 'Edit Text'}
+            </button>
+            
+            <button 
+              onClick={() => toggleImageEditMode()} 
+              disabled={isLoading || isExporting || !iframeContent || !iframeReady} 
+              className={`w-full px-5 py-2 font-semibold rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed ${
+                isImageEditMode 
+                  ? 'bg-blue-600 hover:bg-blue-500' 
+                  : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              {isImageEditMode ? 'Stop Editing Images' : 'Edit Images'}
+            </button>
+            
+            {errorMessage && (
+              <div className="p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">
+                {errorMessage}
+              </div>
+            )}
+            
+            {iframeContent && !iframeReady && (
+              <div className="p-3 bg-yellow-900/50 border border-yellow-700 rounded-md text-sm text-yellow-200">
+                Initializing preview...
+              </div>
+            )}
           </div>
           
-          <h3 className="text-md font-semibold mb-3"> Color Palette {iframeReady && colorChanges.size > 0 && ( <span className="ml-2 text-xs text-green-400">● Live</span> )} </h3>
-          <div className="flex flex-col gap-3"> {isLoading ? ( <p className="text-sm text-gray-500">Extracting colors...</p> ) : colorChanges.size > 0 ? ( Array.from(colorChanges.entries()).map(([oldColor, newColor]) => ( <div key={oldColor} className={`flex items-center justify-between gap-2 p-2 rounded transition-colors ${!(isTextEditMode || isImageEditMode) ? 'hover:bg-gray-800 cursor-pointer' : 'opacity-50'}`} onMouseEnter={() => handleHighlightStart(oldColor)} onMouseLeave={handleHighlightEnd}> <div className="w-8 h-8 rounded border-2 border-gray-500 shrink-0" style={{ backgroundColor: newColor }} /> <span className="text-sm text-gray-400 truncate flex-1" title={oldColor}> {oldColor} </span> <input type="color" value={newColor} className="w-12 h-8 p-0 border-0 rounded cursor-pointer bg-transparent" onChange={(e) => handleColorChange(oldColor, e.target.value)} disabled={!iframeReady || isTextEditMode || isImageEditMode} /> </div> )) ) : ( <p className="text-sm text-gray-500">No opaque colors found. Try loading a preview first.</p> )} </div>
+          {/* Color Palette */}
+          <h3 className="text-md font-semibold mb-3">
+            Color Palette
+            {iframeReady && colorChanges.size > 0 && (
+              <span className="ml-2 text-xs text-green-400">● Live</span>
+            )}
+          </h3>
+          <div className="flex flex-col gap-3">
+            {isLoading ? (
+              <p className="text-sm text-gray-500">Extracting colors...</p>
+            ) : colorChanges.size > 0 ? (
+              Array.from(colorChanges.entries()).map(([oldColor, newColor]) => (
+                <div 
+                  key={oldColor} 
+                  className={`flex items-center justify-between gap-2 p-2 rounded transition-colors ${
+                    !(isTextEditMode || isImageEditMode) 
+                      ? 'hover:bg-gray-800 cursor-pointer' 
+                      : 'opacity-50'
+                  }`}
+                  onMouseEnter={() => handleHighlightStart(oldColor)} 
+                  onMouseLeave={handleHighlightEnd}
+                >
+                  <div 
+                    className="w-8 h-8 rounded border-2 border-gray-500 shrink-0" 
+                    style={{ backgroundColor: newColor }}
+                  />
+                  <span className="text-sm text-gray-400 truncate flex-1" title={oldColor}>
+                    {oldColor}
+                  </span>
+                  <input 
+                    type="color" 
+                    value={newColor} 
+                    className="w-12 h-8 p-0 border-0 rounded cursor-pointer bg-transparent" 
+                    onChange={(e) => handleColorChange(oldColor, e.target.value)} 
+                    disabled={!iframeReady || isTextEditMode || isImageEditMode}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">
+                No opaque colors found. Try loading a preview first.
+              </p>
+            )}
+          </div>
 
-          <h3 className="text-md font-semibold mb-3 mt-6"> Fonts </h3>
-          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}> {fontChanges.size > 0 ? ( Array.from(fontChanges.entries()).map(([oldFont, newFont]) => ( <div key={oldFont} className="flex items-center justify-between gap-2 p-2 rounded"> <span className="text-sm text-gray-200 truncate flex-1" title={oldFont} style={{ fontFamily: newFont, fontSize: '1.1rem' }}> {oldFont} </span> <input type="text" value={newFont} placeholder="e.g., Arial" className="w-32 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" onChange={(e) => handleFontChange(oldFont, e.target.value)} disabled={!iframeReady || isTextEditMode || isImageEditMode} /> </div> )) ) : ( <p className="text-sm text-gray-500">No fonts found.</p> )} </div>
+          {/* Fonts */}
+          <h3 className="text-md font-semibold mb-3 mt-6">Fonts</h3>
+          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}>
+            {fontChanges.size > 0 ? (
+              Array.from(fontChanges.entries()).map(([oldFont, newFont]) => (
+                <div key={oldFont} className="flex items-center justify-between gap-2 p-2 rounded">
+                  <span 
+                    className="text-sm text-gray-200 truncate flex-1" 
+                    title={oldFont} 
+                    style={{ fontFamily: newFont, fontSize: '1.1rem' }}
+                  >
+                    {oldFont}
+                  </span>
+                  <input 
+                    type="text" 
+                    value={newFont} 
+                    placeholder="e.g., Arial" 
+                    className="w-32 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                    onChange={(e) => handleFontChange(oldFont, e.target.value)} 
+                    disabled={!iframeReady || isTextEditMode || isImageEditMode}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No fonts found.</p>
+            )}
+          </div>
 
-          <h3 className="text-md font-semibold mb-3 mt-6"> Font Sizes </h3>
-          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}> {fontSizeChanges.size > 0 ? ( Array.from(fontSizeChanges.entries()).map(([oldSize, newSize]) => ( <div key={oldSize} className="flex items-center justify-between gap-2 p-2 rounded"> <span className="text-sm text-gray-200 truncate" title={oldSize}> {oldSize} </span> <input type="text" value={newSize} placeholder="e.g., 18px" className="w-24 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" onChange={(e) => handleFontSizeChange(oldSize, e.target.value)} disabled={!iframeReady || isTextEditMode || isImageEditMode} /> </div> )) ) : ( <p className="text-sm text-gray-500">No specific font sizes found.</p> )} </div>
+          {/* Font Sizes */}
+          <h3 className="text-md font-semibold mb-3 mt-6">Font Sizes</h3>
+          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}>
+            {fontSizeChanges.size > 0 ? (
+              Array.from(fontSizeChanges.entries()).map(([oldSize, newSize]) => (
+                <div key={oldSize} className="flex items-center justify-between gap-2 p-2 rounded">
+                  <span className="text-sm text-gray-200 truncate" title={oldSize}>
+                    {oldSize}
+                  </span>
+                  <input 
+                    type="text" 
+                    value={newSize} 
+                    placeholder="e.g., 18px" 
+                    className="w-24 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                    onChange={(e) => handleFontSizeChange(oldSize, e.target.value)} 
+                    disabled={!iframeReady || isTextEditMode || isImageEditMode}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No specific font sizes found.</p>
+            )}
+          </div>
           
-          <h3 className="text-md font-semibold mb-3 mt-6"> Spacing </h3>
-          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}> {spacingChanges.size > 0 ? ( Array.from(spacingChanges.entries()).map(([oldSize, newSize]) => { const properties = [...new Set(spacingSelectorMap.get(oldSize)?.map(r => r.property) || [])].join(', '); return ( <div key={oldSize} className="flex flex-col gap-2 p-2 rounded"> <span className="text-xs text-gray-400 truncate" title={properties}> {properties} </span> <div className="flex items-center justify-between gap-2"> <span className="text-sm text-gray-200 truncate" title={oldSize}> {oldSize} </span> <input type="text" value={newSize} placeholder="e.g., 1rem 0" className="w-24 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" onChange={(e) => handleSpacingChange(oldSize, e.target.value)} disabled={!iframeReady || isTextEditMode || isImageEditMode} /> </div> </div> ); }) ) : ( <p className="text-sm text-gray-500">No specific spacing values found.</p> )} </div>
+          {/* Spacing */}
+          <h3 className="text-md font-semibold mb-3 mt-6">Spacing</h3>
+          <div className={`flex flex-col gap-3 ${(isTextEditMode || isImageEditMode) ? 'opacity-50' : ''}`}>
+            {spacingChanges.size > 0 ? (
+                            Array.from(spacingChanges.entries()).map(([oldSize, newSize]) => (
+                <div key={oldSize} className="flex items-center justify-between gap-2 p-2 rounded">
+                  <span className="text-sm text-gray-200 truncate" title={oldSize}>
+                    {oldSize}
+                  </span>
+                  <input 
+                    type="text" 
+                    value={newSize} 
+                    placeholder="e.g., 20px" 
+                    className="w-24 p-1 bg-gray-700 border border-gray-600 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                    onChange={(e) => handleSpacingChange(oldSize, e.target.value)} 
+                    disabled={!iframeReady || isTextEditMode || isImageEditMode}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No spacing values found.</p>
+            )}
+          </div>
         </div>
       )}
 
       {/* RIGHT PREVIEW AREA */}
-      <div className="flex-grow w-full h-full relative">
-        <button onClick={() => setIsSidebarVisible(!isSidebarVisible)} className="absolute top-4 left-4 z-20 p-2 bg-gray-800/80 text-white hover:bg-gray-700 rounded-md transition-colors" title={isSidebarVisible ? 'Enter Fullscreen' : 'Exit Fullscreen'}> {isSidebarVisible ? ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75v4.5m0-4.5h-4.5m4.5 0L15 9m5.25 11.25v-4.5m0 4.5h-4.5m4.5 0L15 15" /> </svg> ) : ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l-5.25 5.25M9 9h3.75v3.75M9 9V3.75H5.25M15 15l5.25-5.25M15 15v-3.75h-3.75M15 15h5.25v3.75" /> </svg> )} </button>
-        {iframeContent ? ( <iframe ref={iframeRef} title="Website Preview" className="w-full h-full bg-white border-0" sandbox="allow-scripts allow-same-origin" /> ) : ( <div className="flex items-center justify-center h-full text-gray-500"> {isLoading ? 'Loading preview...' : 'Enter a URL or upload files to start'} </div> )}
+      <div className="flex-1 relative bg-gray-800 overflow-hidden">
+        {!iframeContent ? (
+          <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">
+            <p>No preview loaded yet. Fetch a website or upload files to start.</p>
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            title="Website Preview"
+            sandbox="allow-same-origin allow-scripts allow-downloads allow-forms"
+            className="w-full h-full border-0"
+          />
+        )}
+
+        {/* Toggle Sidebar Button */}
+        <button
+          onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+          className="absolute top-3 right-3 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm"
+        >
+          {isSidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'}
+        </button>
       </div>
     </main>
   );
 }
+              
