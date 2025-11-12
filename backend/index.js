@@ -117,14 +117,14 @@ app.post('/api/scrape', async (req, res) => {
     res.json({ html: htmlContent, css: usedCss });
 
   } catch (error) {
-    console.error(`Scraping failed for ${url}:`, error);
+    console.error(`Scraping failed for ${url}:`, error); // Keep this
     if (browser) await browser.close();
     
-    let errorMessage = 'Failed to scrape the website.';
-    if (error.message.includes('timeout')) errorMessage = 'Request timed out.';
-    else if (error.message.includes('net::ERR')) errorMessage = 'Could not connect to the website.';
+    // THIS IS THE FIX: Send the REAL error message to the frontend
+    // We check for error.message first, otherwise convert the whole error to a string.
+    const realErrorMessage = error.message || String(error);
     
-    res.status(500).json({ error: errorMessage });
+    res.status(500).json({ error: realErrorMessage });
   }
 });
 
@@ -151,6 +151,7 @@ app.post('/api/process-local', async (req, res) => {
     });
 
     const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1920, height: 1080 });
 
     await page.setContent(html, { waitUntil: 'networkidle0' });
