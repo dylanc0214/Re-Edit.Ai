@@ -1,5 +1,5 @@
 import express from 'express';
-import puppeteer from 'puppeteer-core';
+import puppeteer from 'puppeteer';
 import cors from 'cors';
 
 const app = express();
@@ -100,8 +100,7 @@ app.post('/api/scrape', async (req, res) => {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--single-process'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, 
+      ]
     });
 
     const page = await browser.newPage();
