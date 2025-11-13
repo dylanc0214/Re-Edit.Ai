@@ -712,7 +712,7 @@ export default function Home() {
                   disabled={isLoading || isExporting || isTextEditMode || isImageEditMode}
                   className="w-full px-5 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isLoading ? 'Loading...' : 'Load Preview'}
+                  {isLoading ? 'Loading...' : 'Load Local Files'}
                 </button>
               </div>
             )}
