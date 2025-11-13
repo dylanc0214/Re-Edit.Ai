@@ -163,8 +163,8 @@ export default function Home() {
   }, []);
 
   // ------------------------------------------------------------------
-  // --- CSS PARSING LOGIC (Handles all 3 sources) ---
-  // (This is unchanged from your last version)
+  // --- ⭐️⭐️⭐️ NEW (Corrected) CSS PARSING LOGIC ⭐️⭐️⭐️ ---
+  // (This version correctly separates parsing from HTML modification)
   // ------------------------------------------------------------------
   const parseAllStyles = (cssString: string, htmlString: string): {
     processedHtml: string;
@@ -173,7 +173,7 @@ export default function Home() {
     fontSizeMap: Map<string, { selector: string; property: string }[]>;
     spacingMap: Map<string, { selector: string; property: string }[]>;
   } => {
-    console.log('--- STARTING UPGRADED CSS PARSE (CSS file + HTML <style> + Inline [style]) ---');
+    console.log('--- STARTING CORRECTED CSS PARSE (CSS file + HTML <style> + Inline [style]) ---');
     
     const newColorSelectorMap = new Map<string, { selector: string; property: string }[]>();
     const newFontSelectorMap = new Map<string, { selector: string; property: string }[]>();
@@ -204,22 +204,16 @@ export default function Home() {
       return value;
     };
 
-    // --- PART 1: Extract <style> blocks from HTML ---
-    let processedHtml = htmlString;
+    // --- PART 1: Extract <style> blocks from HTML (Read-Only) ---
     let inlineStyleTagCss = '';
     try {
       const doc = new DOMParser().parseFromString(htmlString, 'text/html');
       doc.querySelectorAll('style').forEach(styleTag => {
         inlineStyleTagCss += styleTag.textContent || '';
-        // Remove the style tag from the document so it's not processed twice
-        // (it will be injected later in prepareIframe)
-        styleTag.remove(); 
       });
-      processedHtml = doc.documentElement.outerHTML;
       console.log('PARSE: Extracted', inlineStyleTagCss.length, 'chars from <style> blocks.');
     } catch (e) {
       console.error('Error parsing <style> tags from HTML:', e);
-      // processedHtml is still the original htmlString
     }
     
     // --- Combine external CSS file with inline <style> block CSS ---
@@ -288,9 +282,9 @@ export default function Home() {
     }
 
     // --- PART 3: Parse the HTML for inline [style] attributes ---
-    // (This part also benefits from the cssVariables map)
+    let processedHtml = htmlString; // Start with the original HTML
     try {
-      const doc = new DOMParser().parseFromString(processedHtml, 'text/html'); // Use the already-processed HTML
+      const doc = new DOMParser().parseFromString(htmlString, 'text/html'); // Parse original HTML
       let inlineStyleCounter = 0;
 
       doc.querySelectorAll('[style]').forEach(el => {
@@ -340,7 +334,7 @@ export default function Home() {
         });
       });
       
-      processedHtml = doc.documentElement.outerHTML;
+      processedHtml = doc.documentElement.outerHTML; // This is the HTML with data-inline-id attributes
       
     } catch (error) {
       console.error('Failed to parse inline HTML styles:', error);
@@ -364,7 +358,7 @@ export default function Home() {
     const initialSpacingMap = new Map<string, string>(); newSpacingSelectorMap.forEach((_, size) => initialSpacingMap.set(size, size)); setSpacingChanges(initialSpacingMap);
 
     return { 
-      processedHtml, // This HTML no longer has the <style> tags in it
+      processedHtml, // This HTML *still contains* its <style> tags, but has data-inline-id
       colorMap: newColorSelectorMap, 
       fontMap: newFontSelectorMap, 
       fontSizeMap: newFontSizeSelectorMap, 
@@ -373,41 +367,50 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // --- IFRAME PREPARATION ---
-  // (This is also correct from your last version)
+  // --- ⭐️⭐️⭐️ NEW (Corrected) IFRAME PREPARATION ⭐️⭐️⭐️ ---
+  // (This function now handles all HTML cleaning)
   // ------------------------------------------------------------------
   const prepareIframe = (htmlString: string, cssString: string, baseUrl: string | null) => {
-    console.log('--- PREPARING IFRAME ---');
+    console.log('--- PREPARING IFRAME (Corrected Version) ---');
     let processedHtml = htmlString;
     if (baseUrl) { processedHtml = makeUrlsAbsolute(htmlString, baseUrl); }
 
-    // --- Get <style> block CSS ---
+    // --- NEW LOGIC ---
+    // 1. Extract <style> block CSS from the HTML
     let inlineStyleTagCss = '';
     try {
-      const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+      const doc = new DOMParser().parseFromString(processedHtml, 'text/html');
       doc.querySelectorAll('style').forEach(styleTag => {
         inlineStyleTagCss += styleTag.textContent || '';
-        styleTag.remove(); // Remove them so we can inject our combined <style>
+        styleTag.remove(); // 👈 Remove <style> tags from the HTML
       });
-      processedHtml = doc.documentElement.outerHTML; // Use the HTML *without* the <style> tags
-    } catch (e) { console.error('Error parsing <style> tags for iframe:', e); }
+      processedHtml = doc.documentElement.outerHTML; // 👈 This HTML is now clean of <style> tags
+    } catch (e) { 
+      console.error('Error parsing/removing <style> tags for iframe:', e);
+      // If parsing fails, just use the original processedHtml (which still has <style>)
+      // This is a safe fallback.
+      processedHtml = htmlString; 
+    }
     
+    // 2. Combine with the external .css file content
     const combinedCssString = inlineStyleTagCss + '\n' + cssString;
-    // --- End of logic ---
+    // --- End of new logic ---
 
     const styleTag = `<style>${combinedCssString}</style>`; // 👈 Inject the COMBINED CSS
     const scriptTag = `<script>${iframeListenerScript}</script>`;
     const cspMetaTagRegex = /<meta\s+http-equiv=["']Content-Security-Policy["'][\s\S]*?>/gi;
     const xFrameMetaTagRegex = /<meta\s+http-equiv=["']X-Frame-Options["'][\s\S]*?>/gi;
     
-    // We already removed <style> tags, so no need to do it again.
+    // 3. Clean and inject
     const modifiedHtml = processedHtml
       .replace(cspMetaTagRegex, '')
       .replace(xFrameMetaTagRegex, '')
       .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "")
       .replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
       
-    const cleanedHtml = modifiedHtml.replace( /<link[^>]*href=["']\/(?!http)[^"']+\.css["'][^>]*>/gi, '' );
+    // 4. This line removes any <link rel="stylesheet"> tags that might still be in the HTML
+    const cleanedHtml = modifiedHtml.replace( /<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '' );
+    
     setIframeContent(cleanedHtml);
     console.log('PREPARE: Prepared HTML for iframe.');
   };
@@ -471,10 +474,12 @@ export default function Home() {
     }
   };
   
-  // --- ⭐️⭐️⭐️ REVERTED handleLoadLocal ⭐️⭐️⭐️ ---
-  // (Now requires both files again)
+  // --- handleLoadLocal ---
+  // (This is correct, requires both files)
   // ------------------------------------------------------------------
   const handleLoadLocal = () => {
+    console.log("--- DEBUG: NEW handleLoadLocal FUNCTION IS RUNNING! ---"); // 👈 This is the debug line
+    
     if (!localHtml || !localCss) {
       setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
@@ -641,7 +646,7 @@ export default function Home() {
 
   // ------------------------------------------------------------------
   // RENDER UI
-  // (Reverted CSS upload to be mandatory)
+  // (Reverted button text to 'Load Preview' and CSS to mandatory)
   // ------------------------------------------------------------------
   return (
     <main className="flex flex-row w-full h-screen bg-gray-900 text-white">
@@ -740,7 +745,7 @@ export default function Home() {
                   disabled={isLoading || isExporting || isTextEditMode || isImageEditMode}
                   className="w-full px-5 py-2 font-semibold bg-green-600 rounded-md hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isLoading ? 'Loading...' : 'Load Local Files'}
+                  {isLoading ? 'Loading...' : 'Load Preview'}
                 </button>
               </div>
             )}
