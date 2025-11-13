@@ -163,8 +163,8 @@ export default function Home() {
   }, []);
 
   // ------------------------------------------------------------------
-  // --- ⭐️⭐️⭐️ NEW UPGRADED CSS PARSING LOGIC ⭐️⭐️⭐️ ---
-  // (Now handles <style> blocks from the HTML)
+  // --- CSS PARSING LOGIC (Handles all 3 sources) ---
+  // (This is unchanged from your last version)
   // ------------------------------------------------------------------
   const parseAllStyles = (cssString: string, htmlString: string): {
     processedHtml: string;
@@ -204,7 +204,7 @@ export default function Home() {
       return value;
     };
 
-    // --- ⭐️ NEW: PART 1: Extract <style> blocks from HTML ---
+    // --- PART 1: Extract <style> blocks from HTML ---
     let processedHtml = htmlString;
     let inlineStyleTagCss = '';
     try {
@@ -222,7 +222,7 @@ export default function Home() {
       // processedHtml is still the original htmlString
     }
     
-    // --- NEW: Combine external CSS file with inline <style> block CSS ---
+    // --- Combine external CSS file with inline <style> block CSS ---
     const combinedCssString = inlineStyleTagCss + '\n' + cssString;
 
     // --- PART 2: Parse the combined .css file + <style> blocks ---
@@ -373,16 +373,15 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // --- REFACTORED IFRAME PREPARATION ---
-  // (This is unchanged)
+  // --- IFRAME PREPARATION ---
+  // (This is also correct from your last version)
   // ------------------------------------------------------------------
   const prepareIframe = (htmlString: string, cssString: string, baseUrl: string | null) => {
     console.log('--- PREPARING IFRAME ---');
     let processedHtml = htmlString;
     if (baseUrl) { processedHtml = makeUrlsAbsolute(htmlString, baseUrl); }
 
-    // --- ⭐️ NEW: Combine external CSS with <style> block CSS ---
-    // We get the <style> CSS again just for the iframe injection.
+    // --- Get <style> block CSS ---
     let inlineStyleTagCss = '';
     try {
       const doc = new DOMParser().parseFromString(htmlString, 'text/html');
@@ -394,7 +393,7 @@ export default function Home() {
     } catch (e) { console.error('Error parsing <style> tags for iframe:', e); }
     
     const combinedCssString = inlineStyleTagCss + '\n' + cssString;
-    // --- End of new logic ---
+    // --- End of logic ---
 
     const styleTag = `<style>${combinedCssString}</style>`; // 👈 Inject the COMBINED CSS
     const scriptTag = `<script>${iframeListenerScript}</script>`;
@@ -472,11 +471,12 @@ export default function Home() {
     }
   };
   
-  // --- UPDATED handleLoadLocal ---
+  // --- ⭐️⭐️⭐️ REVERTED handleLoadLocal ⭐️⭐️⭐️ ---
+  // (Now requires both files again)
+  // ------------------------------------------------------------------
   const handleLoadLocal = () => {
-    // ⭐️ We no longer require the CSS file! It's optional.
-    if (!localHtml) {
-      setErrorMessage('Please upload an HTML file.');
+    if (!localHtml || !localCss) {
+      setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
     }
     
@@ -484,8 +484,9 @@ export default function Home() {
 
     try {
       console.log('--- STARTING LOCAL LOAD (Frontend-Only) ---');
-      // localCss might be an empty string, which is fine.
-      // parseAllStyles will get everything from the <style> blocks in localHtml.
+      // parseAllStyles will get styles from localCss,
+      // AND from <style> blocks in localHtml,
+      // AND from style="..." attributes in localHtml
       const { processedHtml } = parseAllStyles(localCss, localHtml);
       prepareIframe(processedHtml, localCss, null); 
     } catch (error: any) {
@@ -640,7 +641,7 @@ export default function Home() {
 
   // ------------------------------------------------------------------
   // RENDER UI
-  // (This is unchanged, but the 'Upload CSS' is now optional)
+  // (Reverted CSS upload to be mandatory)
   // ------------------------------------------------------------------
   return (
     <main className="flex flex-row w-full h-screen bg-gray-900 text-white">
@@ -708,8 +709,8 @@ export default function Home() {
                     <li>Log in to your page in your own browser.</li>
                     <li>Right-click {'>'} <strong>Save As...</strong></li>
                     <li>For "Format", choose <strong>"Webpage, HTML Only"</strong>.</li>
-                    <li>Upload that HTML file below.</li>
-                    <li>(Optional) Upload your project's <strong>.css</strong> file if you have one.</li>
+                    <li>Find your project's <strong>.css</strong> file.</li>
+                    <li>Upload both files below.</li>
                   </ol>
                 </div>
                 {/* --- END GUIDANCE --- */}
@@ -725,7 +726,7 @@ export default function Home() {
                 </label>
                 
                 <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer">
-                  {cssFileName ? cssFileName : 'Upload CSS File (Optional)'}
+                  {cssFileName ? cssFileName : 'Upload CSS File'}
                   <input 
                     type="file" 
                     accept=".css" 
