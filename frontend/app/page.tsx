@@ -453,11 +453,12 @@ export default function Home() {
       setErrorMessage('Please upload both an HTML and a CSS file.');
       return;
     }
-    
+
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
 
     try {
       console.log('--- STARTING LOCAL LOAD (Frontend-Only) ---');
+      // This now runs parseAllStyles in the browser, not on the server
       const { processedHtml } = parseAllStyles(localCss, localHtml);
       prepareIframe(processedHtml, localCss, null); 
     } catch (error: any) {
