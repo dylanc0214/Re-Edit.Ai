@@ -164,6 +164,7 @@ export default function Home() {
 
   // ------------------------------------------------------------------
   // --- ⭐️⭐️⭐️ NEW UPGRADED CSS PARSING LOGIC ⭐️⭐️⭐️ ---
+  // (Now handles <style> blocks from the HTML)
   // ------------------------------------------------------------------
   const parseAllStyles = (cssString: string, htmlString: string): {
     processedHtml: string;
@@ -172,49 +173,65 @@ export default function Home() {
     fontSizeMap: Map<string, { selector: string; property: string }[]>;
     spacingMap: Map<string, { selector: string; property: string }[]>;
   } => {
-    console.log('--- STARTING UPGRADED CSS PARSE (CSS file + Inline) ---');
+    console.log('--- STARTING UPGRADED CSS PARSE (CSS file + HTML <style> + Inline [style]) ---');
     
     const newColorSelectorMap = new Map<string, { selector: string; property: string }[]>();
     const newFontSelectorMap = new Map<string, { selector: string; property: string }[]>();
     const newFontSizeSelectorMap = new Map<string, { selector: string; property: string }[]>();
     const newSpacingSelectorMap = new Map<string, { selector: string; property: string }[]>();
 
-    // --- NEW: Map to store CSS Variables ---
     const cssVariables = new Map<string, string>();
     const variableRegex = /var\((--[\w-]+)\)/g;
     
-    // Regex to find colors
     const colorRegex = /(#(?:[0-9a-f]{3}){1,2}\b|rgba?\([^)]+\)|hsla?\([^)]+\))/gi;
     const filterList = ['inherit', 'initial', 'auto', 'unset'];
 
-    // --- NEW: Helper function to resolve CSS variables ---
-    // This function can handle nested variables (e.g., var(--a) -> var(--b) -> #fff)
+    // Helper function to resolve CSS variables
     const resolveValue = (value: string, maxDepth = 10): string => {
       if (maxDepth <= 0) {
         console.warn('CSS Variable resolution depth exceeded, possible circular reference:', value);
-        return value; // Stop recursion
+        return value;
       }
       let match = variableRegex.exec(value);
       if (match) {
-        const varName = match[1]; // e.g., --color-primary
+        const varName = match[1];
         const varValue = cssVariables.get(varName);
         if (varValue) {
-          // Replace the var() with its value and recursively resolve
           const newValue = value.replace(match[0], varValue);
           return resolveValue(newValue, maxDepth - 1);
         }
       }
-      return value; // No variable found, or variable not in map
+      return value;
     };
 
-    // --- PART 1: Parse the .css file ---
+    // --- ⭐️ NEW: PART 1: Extract <style> blocks from HTML ---
+    let processedHtml = htmlString;
+    let inlineStyleTagCss = '';
     try {
-      const root = postcss.parse(cssString);
+      const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+      doc.querySelectorAll('style').forEach(styleTag => {
+        inlineStyleTagCss += styleTag.textContent || '';
+        // Remove the style tag from the document so it's not processed twice
+        // (it will be injected later in prepareIframe)
+        styleTag.remove(); 
+      });
+      processedHtml = doc.documentElement.outerHTML;
+      console.log('PARSE: Extracted', inlineStyleTagCss.length, 'chars from <style> blocks.');
+    } catch (e) {
+      console.error('Error parsing <style> tags from HTML:', e);
+      // processedHtml is still the original htmlString
+    }
+    
+    // --- NEW: Combine external CSS file with inline <style> block CSS ---
+    const combinedCssString = inlineStyleTagCss + '\n' + cssString;
+
+    // --- PART 2: Parse the combined .css file + <style> blocks ---
+    try {
+      const root = postcss.parse(combinedCssString);
       
-      // --- NEW: First Pass - Find all CSS Variables ---
+      // Pass 1 - Find all CSS Variables
       console.log('PARSE: Pass 1 - Finding CSS Variables...');
       root.walkRules(rule => {
-        // Find variables defined in :root or other selectors
         rule.walkDecls(decl => {
           if (decl.prop.startsWith('--')) {
             cssVariables.set(decl.prop, decl.value.trim());
@@ -223,41 +240,31 @@ export default function Home() {
       });
       console.log('PARSE: Found', cssVariables.size, 'CSS variables.');
 
-      // --- Second Pass - Parse all declarations and resolve variables ---
+      // Pass 2 - Parse all declarations and resolve variables
       console.log('PARSE: Pass 2 - Parsing rules and resolving variables...');
       root.walkRules(rule => {
         rule.walkDecls(decl => {
-          if (decl.prop.startsWith('--')) return; // Skip variable definitions
+          if (decl.prop.startsWith('--')) return;
 
           const propLower = decl.prop.toLowerCase();
           const originalValue = decl.value.trim();
           const property = decl.prop;
           const selector = rule.selector;
-
-          // --- ⭐️ UPGRADE ⭐️ ---
-          // Resolve the value BEFORE processing it
           const value = resolveValue(originalValue);
-          // --- ⭐️ END UPGRADE ⭐️ ---
 
-          // Smarter Color Parsing (now with resolved values)
+          // Smarter Color Parsing
           if (COLOR_PROPERTIES.includes(propLower)) {
             let colorsFound: string[] = [];
             const matches = value.match(colorRegex);
             if (matches) { 
               colorsFound = matches; 
             }
-            // Check if the *resolved* value is a valid color (e.g., "red", "blue")
             if (colorsFound.length === 0 && tinycolor(value).isValid()) {
               colorsFound.push(value);
             }
-
             for (const colorValue of colorsFound) {
               const colorObj = tinycolor(colorValue);
-              if (colorObj.isValid()) { 
-                const hexColor = colorObj.toHexString(); 
-                if (!newColorSelectorMap.has(hexColor)) { newColorSelectorMap.set(hexColor, []); } 
-                newColorSelectorMap.get(hexColor)?.push({ selector, property }); 
-              }
+              if (colorObj.isValid()) { const hexColor = colorObj.toHexString(); if (!newColorSelectorMap.has(hexColor)) { newColorSelectorMap.set(hexColor, []); } newColorSelectorMap.get(hexColor)?.push({ selector, property }); }
             }
           }
           // Font Family
@@ -280,11 +287,10 @@ export default function Home() {
       setErrorMessage('Failed to parse the provided CSS file.');
     }
 
-    // --- PART 2: Parse the HTML for inline styles ---
+    // --- PART 3: Parse the HTML for inline [style] attributes ---
     // (This part also benefits from the cssVariables map)
-    let processedHtml = htmlString;
     try {
-      const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+      const doc = new DOMParser().parseFromString(processedHtml, 'text/html'); // Use the already-processed HTML
       let inlineStyleCounter = 0;
 
       doc.querySelectorAll('[style]').forEach(el => {
@@ -301,11 +307,7 @@ export default function Home() {
           
           const property = parts[0].trim().toLowerCase();
           const originalValue = parts.slice(1).join(':').trim();
-
-          // --- ⭐️ UPGRADE ⭐️ ---
-          // Resolve the value BEFORE processing it
           const value = resolveValue(originalValue);
-          // --- ⭐️ END UPGRADE ⭐️ ---
 
           // Smarter Color Parsing (for inline styles)
           if (COLOR_PROPERTIES.includes(property)) {
@@ -317,7 +319,6 @@ export default function Home() {
             if (colorsFound.length === 0 && tinycolor(value).isValid()) {
               colorsFound.push(value);
             }
-
             for (const colorValue of colorsFound) {
               const colorObj = tinycolor(colorValue);
               if (colorObj.isValid()) { const hexColor = colorObj.toHexString(); if (!newColorSelectorMap.has(hexColor)) { newColorSelectorMap.set(hexColor, []); } newColorSelectorMap.get(hexColor)?.push({ selector, property }); }
@@ -345,25 +346,25 @@ export default function Home() {
       console.error('Failed to parse inline HTML styles:', error);
     }
 
-    // --- PART 3: Set the state (unchanged) ---
-    console.log('PARSE: Found', newColorSelectorMap.size, 'unique colors (CSS + Inline).');
+    // --- PART 4: Set the state (unchanged) ---
+    console.log('PARSE: Found', newColorSelectorMap.size, 'unique colors (CSS + <style> + Inline).');
     setColorSelectorMap(newColorSelectorMap);
     const initialColorMap = new Map<string, string>(); newColorSelectorMap.forEach((_, color) => initialColorMap.set(color, color)); setColorChanges(initialColorMap);
     
-    console.log('PARSE: Found', newFontSelectorMap.size, 'unique fonts (CSS + Inline).');
+    console.log('PARSE: Found', newFontSelectorMap.size, 'unique fonts (CSS + <style> + Inline).');
     setFontSelectorMap(newFontSelectorMap);
     const initialFontMap = new Map<string, string>(); newFontSelectorMap.forEach((_, font) => initialFontMap.set(font, font)); setFontChanges(initialFontMap);
     
-    console.log('PARSE: Found', newFontSizeSelectorMap.size, 'unique font sizes (CSS + Inline).');
+    console.log('PARSE: Found', newFontSizeSelectorMap.size, 'unique font sizes (CSS + <style> + Inline).');
     setFontSizeSelectorMap(newFontSizeSelectorMap);
     const initialFontSizeMap = new Map<string, string>(); newFontSizeSelectorMap.forEach((_, size) => initialFontSizeMap.set(size, size)); setFontSizeChanges(initialFontSizeMap);
     
-    console.log('PARSE: Found', newSpacingSelectorMap.size, 'unique spacing values (CSS + Inline).');
+    console.log('PARSE: Found', newSpacingSelectorMap.size, 'unique spacing values (CSS + <style> + Inline).');
     setSpacingSelectorMap(newSpacingSelectorMap);
     const initialSpacingMap = new Map<string, string>(); newSpacingSelectorMap.forEach((_, size) => initialSpacingMap.set(size, size)); setSpacingChanges(initialSpacingMap);
 
     return { 
-      processedHtml, 
+      processedHtml, // This HTML no longer has the <style> tags in it
       colorMap: newColorSelectorMap, 
       fontMap: newFontSelectorMap, 
       fontSizeMap: newFontSizeSelectorMap, 
@@ -379,11 +380,34 @@ export default function Home() {
     console.log('--- PREPARING IFRAME ---');
     let processedHtml = htmlString;
     if (baseUrl) { processedHtml = makeUrlsAbsolute(htmlString, baseUrl); }
-    const styleTag = `<style>${cssString}</style>`;
+
+    // --- ⭐️ NEW: Combine external CSS with <style> block CSS ---
+    // We get the <style> CSS again just for the iframe injection.
+    let inlineStyleTagCss = '';
+    try {
+      const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+      doc.querySelectorAll('style').forEach(styleTag => {
+        inlineStyleTagCss += styleTag.textContent || '';
+        styleTag.remove(); // Remove them so we can inject our combined <style>
+      });
+      processedHtml = doc.documentElement.outerHTML; // Use the HTML *without* the <style> tags
+    } catch (e) { console.error('Error parsing <style> tags for iframe:', e); }
+    
+    const combinedCssString = inlineStyleTagCss + '\n' + cssString;
+    // --- End of new logic ---
+
+    const styleTag = `<style>${combinedCssString}</style>`; // 👈 Inject the COMBINED CSS
     const scriptTag = `<script>${iframeListenerScript}</script>`;
     const cspMetaTagRegex = /<meta\s+http-equiv=["']Content-Security-Policy["'][\s\S]*?>/gi;
     const xFrameMetaTagRegex = /<meta\s+http-equiv=["']X-Frame-Options["'][\s\S]*?>/gi;
-    const modifiedHtml = processedHtml.replace(cspMetaTagRegex, '').replace(xFrameMetaTagRegex, '').replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "").replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
+    
+    // We already removed <style> tags, so no need to do it again.
+    const modifiedHtml = processedHtml
+      .replace(cspMetaTagRegex, '')
+      .replace(xFrameMetaTagRegex, '')
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/g, "")
+      .replace(/<\/head>/i, `${scriptTag}${styleTag}</head>`);
+      
     const cleanedHtml = modifiedHtml.replace( /<link[^>]*href=["']\/(?!http)[^"']+\.css["'][^>]*>/gi, '' );
     setIframeContent(cleanedHtml);
     console.log('PREPARE: Prepared HTML for iframe.');
@@ -448,17 +472,20 @@ export default function Home() {
     }
   };
   
+  // --- UPDATED handleLoadLocal ---
   const handleLoadLocal = () => {
-    if (!localHtml || !localCss) {
-      setErrorMessage('Please upload both an HTML and a CSS file.');
+    // ⭐️ We no longer require the CSS file! It's optional.
+    if (!localHtml) {
+      setErrorMessage('Please upload an HTML file.');
       return;
     }
-
+    
     setIsLoading(true); setIframeContent(''); setIframeReady(false); setErrorMessage(''); setIsTextEditMode(false); setEditingTextElement(null); setIsImageEditMode(false); setEditingImageElement(null);
 
     try {
       console.log('--- STARTING LOCAL LOAD (Frontend-Only) ---');
-      // This now runs parseAllStyles in the browser, not on the server
+      // localCss might be an empty string, which is fine.
+      // parseAllStyles will get everything from the <style> blocks in localHtml.
       const { processedHtml } = parseAllStyles(localCss, localHtml);
       prepareIframe(processedHtml, localCss, null); 
     } catch (error: any) {
@@ -613,7 +640,7 @@ export default function Home() {
 
   // ------------------------------------------------------------------
   // RENDER UI
-  // (This is unchanged)
+  // (This is unchanged, but the 'Upload CSS' is now optional)
   // ------------------------------------------------------------------
   return (
     <main className="flex flex-row w-full h-screen bg-gray-900 text-white">
@@ -681,8 +708,8 @@ export default function Home() {
                     <li>Log in to your page in your own browser.</li>
                     <li>Right-click {'>'} <strong>Save As...</strong></li>
                     <li>For "Format", choose <strong>"Webpage, HTML Only"</strong>.</li>
-                    <li>Find your project's <strong>.css</strong> file.</li>
-                    <li>Upload both files below.</li>
+                    <li>Upload that HTML file below.</li>
+                    <li>(Optional) Upload your project's <strong>.css</strong> file if you have one.</li>
                   </ol>
                 </div>
                 {/* --- END GUIDANCE --- */}
@@ -698,7 +725,7 @@ export default function Home() {
                 </label>
                 
                 <label className="w-full px-4 py-2 text-center text-sm font-medium bg-gray-700 rounded-md hover:bg-gray-600 transition-colors cursor-pointer">
-                  {cssFileName ? cssFileName : 'Upload CSS File'}
+                  {cssFileName ? cssFileName : 'Upload CSS File (Optional)'}
                   <input 
                     type="file" 
                     accept=".css" 
