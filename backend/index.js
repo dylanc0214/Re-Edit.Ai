@@ -1,6 +1,6 @@
 import express from 'express';
 import puppeteer from 'puppeteer-core'; // 👈 Change this
-import chromium from 'chrome-aws-lambda'; // 👈 Add this
+import chromium from '@sparticuz/chromium'; // 👈 NEW PACKAGE
 import cors from 'cors';
 import fetch from 'node-fetch';
 
