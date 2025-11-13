@@ -1,5 +1,6 @@
 import express from 'express';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core'; // 👈 Change this
+import chromium from 'chrome-aws-lambda'; // 👈 Add this
 import cors from 'cors';
 import fetch from 'node-fetch';
 
@@ -40,7 +41,9 @@ app.post('/api/scrape', async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
+      args: chromium.args,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security', '--disable-features=IsolateOrigins,site-per-process'],
     });
     const page = await browser.newPage();
