@@ -29,7 +29,7 @@ const autoScroll = async (page) => {
   });
 };
 
-// --- ENDPOINT 1: /api/scrape (FIXED) ---
+// --- ENDPOINT 1: /api/scrape (UPDATED WITH DEBUGGING) ---
 app.post('/api/scrape', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
@@ -38,20 +38,38 @@ app.post('/api/scrape', async (req, res) => {
   console.log(`Scraping started for: ${url}`);
   let browser;
   try {
+    
+    // --- START NEW DEBUGGING FIX ---
+
+    // 1. Get the executable path first
+    const execPath = await chromium.executablePath;
+    
+    // 2. Log it so we can see what Render is getting
+    console.log("DEBUG: chromium.executablePath returned:", execPath);
+
+    // 3. If the path is null, it means chrome-aws-lambda failed.
+    //    We will try a hardcoded common path for Linux servers.
+    const finalExecutablePath = execPath || '/usr/bin/google-chrome-stable';
+
+    // 4. Log the final path we are trying to use
+    console.log("DEBUG: Final Executable Path being used:", finalExecutablePath);
+
     browser = await puppeteer.launch({
-      executablePath: await chromium.executablePath,
+      executablePath: finalExecutablePath, // 👈 Use the final, safe path
       headless: chromium.headless,
       args: [
-        ...chromium.args, // <-- Has all the chromium args
-    
-        // --- Has YOUR args ---
+        ...chromium.args, // <-- This brings in all the important chromium args
+        
+        // --- Now we add YOUR args ---
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process'
       ],
     });
-
+    
+    // --- END NEW DEBUGGING FIX ---
+    
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
