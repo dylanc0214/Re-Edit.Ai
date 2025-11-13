@@ -1,5 +1,5 @@
 import express from 'express';
-import puppeteer from 'puppeteer-core'; // 👈 Change this
+import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium'; // 👈 NEW PACKAGE
 import cors from 'cors';
 import fetch from 'node-fetch';
@@ -29,7 +29,7 @@ const autoScroll = async (page) => {
   });
 };
 
-// --- ENDPOINT 1: /api/scrape (UPDATED WITH DEBUGGING) ---
+// --- ENDPOINT 1: /api/scrape (UPDATED WITH THE () FIX) ---
 app.post('/api/scrape', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
@@ -39,28 +39,29 @@ app.post('/api/scrape', async (req, res) => {
   let browser;
   try {
     
-    // --- START NEW DEBUGGING FIX ---
+    // --- START FINAL FIX ---
 
-    // 1. Get the executable path first
-    const execPath = await chromium.executablePath;
+    // 1. Get the executable path first by CALLING the async function
+    const execPath = await chromium.executablePath(); // 👈 CORRECTED!
     
     // 2. Log it so we can see what Render is getting
-    console.log("DEBUG: chromium.executablePath returned:", execPath);
+    console.log("DEBUG: chromium.executablePath() returned:", execPath);
 
-    // 3. If the path is null, it means chrome-aws-lambda failed.
-    //    We will try a hardcoded common path for Linux servers.
-    const finalExecutablePath = execPath || '/usr/bin/google-chrome-stable';
+    // 3. If the path is null or undefined, throw an error
+    if (!execPath) {
+      throw new Error(`Chromium executable path was null or undefined: ${execPath}`);
+    }
 
     // 4. Log the final path we are trying to use
-    console.log("DEBUG: Final Executable Path being used:", finalExecutablePath);
+    console.log("DEBUG: Final Executable Path being used:", execPath);
 
     browser = await puppeteer.launch({
-      executablePath: finalExecutablePath, // 👈 Use the final, safe path
-      headless: chromium.headless,
+      executablePath: execPath, // 👈 Use the execPath string
+      headless: chromium.headless, // 👈 Use new package's setting
       args: [
-        ...chromium.args, // <-- This brings in all the important chromium args
+        ...chromium.args, // 👈 Use new package's args
         
-        // --- Now we add YOUR args ---
+        // --- Your args ---
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-web-security',
@@ -68,7 +69,7 @@ app.post('/api/scrape', async (req, res) => {
       ],
     });
     
-    // --- END NEW DEBUGGING FIX ---
+    // --- END FINAL FIX ---
     
 
     const page = await browser.newPage();
