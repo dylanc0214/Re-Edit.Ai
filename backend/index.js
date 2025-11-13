@@ -39,11 +39,19 @@ app.post('/api/scrape', async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      args: chromium.args,
       executablePath: await chromium.executablePath,
       headless: chromium.headless,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security', '--disable-features=IsolateOrigins,site-per-process'],
+      args: [
+        ...chromium.args, // <-- This brings in all the important chromium args
+    
+        // --- Now we add YOUR args ---
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process'
+      ],
     });
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
     
