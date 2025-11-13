@@ -42,15 +42,16 @@ app.post('/api/scrape', async (req, res) => {
       executablePath: await chromium.executablePath,
       headless: chromium.headless,
       args: [
-        ...chromium.args, // <-- This brings in all the important chromium args
+        ...chromium.args, // <-- Has all the chromium args
     
-        // --- Now we add YOUR args ---
+        // --- Has YOUR args ---
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process'
       ],
     });
+
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
